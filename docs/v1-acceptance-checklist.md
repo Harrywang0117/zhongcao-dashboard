@@ -13,8 +13,8 @@
 | 项目 | 结果 |
 | --- | --- |
 | 命令 | `npm test` |
-| 结果 | 30 项通过，0 项失败 |
-| 覆盖范围 | 领域逻辑、链接预览安全、核心 UI 可访问性静态检查 |
+| 结果 | 32 项通过，0 项失败 |
+| 覆盖范围 | 领域逻辑、链接预览安全、核心 UI 可访问性静态检查、移动端图列封面回归检查 |
 
 ## P0 核心闭环
 
@@ -84,6 +84,16 @@
 - 本地导出/导入备份。
 - PWA 系统分享入口。
 - 公开社区、点评发布、店铺营销能力。
+
+## 真实使用测试记录
+
+| 项目 | 结果 |
+| --- | --- |
+| 命令 | `python3 /Users/wangjunpeng/.agents/skills/webapp-testing/scripts/with_server.py --server "npm start" --port 4173 --timeout 30 -- python3 /private/tmp/zhongcao_v1_real_usage_test.py` |
+| 结果 | 通过 |
+| 视口 | 390 x 844 手机视口 |
+| 覆盖路径 | 失败兜底保存、重新解析、店铺 + 菜品整理、想去搜索/标签/图列、编辑店铺、重复排期去重、改期、轻反馈、撤销反馈、放回想去、不想去了、回收站恢复、刷新后持久化、Manifest 和 service worker 加载 |
+| 截图 | `/private/tmp/zhongcao-v1-mobile-viewport.png`、`/private/tmp/zhongcao-v1-mobile-final.png` |
 
 ## 真实使用测试建议路径
 

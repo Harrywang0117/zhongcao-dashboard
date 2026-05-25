@@ -869,17 +869,22 @@ function splitTags(value) {
 
 function bindImageFallbacks() {
   app.querySelectorAll("img[data-fallback]").forEach((img) => {
-    img.addEventListener(
-      "error",
-      () => {
-        const fallback = document.createElement("div");
-        fallback.className = "cover placeholder";
-        fallback.innerHTML = `<span>${escapeHtml(img.dataset.fallback)}</span>`;
-        img.closest(".cover").replaceWith(fallback);
-      },
-      { once: true }
-    );
+    img.addEventListener("error", () => replaceImageWithFallback(img), { once: true });
+
+    window.setTimeout(() => {
+      if (!img.complete || img.naturalWidth === 0) replaceImageWithFallback(img);
+    }, 2200);
   });
+}
+
+function replaceImageWithFallback(img) {
+  const cover = img.closest(".cover");
+  if (!cover || cover.classList.contains("placeholder")) return;
+
+  const fallback = document.createElement("div");
+  fallback.className = "cover placeholder";
+  fallback.innerHTML = `<span>${escapeHtml(img.dataset.fallback)}</span>`;
+  cover.replaceWith(fallback);
 }
 
 function showToast(message, undo = null) {

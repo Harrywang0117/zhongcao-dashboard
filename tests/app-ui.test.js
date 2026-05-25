@@ -21,3 +21,12 @@ test("interactive controls have touch and focus-visible styles", () => {
   assert.match(stylesSource, /touch-action:\s*manipulation/);
   assert.match(stylesSource, /:focus-visible/);
 });
+
+test("mobile grid cards keep cover height independent from compact list cards", () => {
+  assert.match(stylesSource, /\.card-grid\s+\.item-card\.compact\s+\.cover[\s\S]*min-height:\s*auto/);
+});
+
+test("stalled external cover images fall back to placeholders", () => {
+  assert.match(appSource, /img\.complete/);
+  assert.match(appSource, /img\.naturalWidth/);
+});

@@ -391,6 +391,11 @@ h3 {
   min-height: auto;
 }
 
+.card-grid .item-card.compact .cover,
+.card-grid .item-card.compact .cover img {
+  min-height: auto;
+}
+
 .list-stack {
   display: grid;
   gap: 10px;
