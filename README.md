@@ -20,6 +20,8 @@ npm test
 
 - [产品需求文档](PRD.md)
 - [前端设计方案](FRONTEND_DESIGN.md)
+- [轻反馈驱动下一步状态需求说明](docs/feedback-state-requirements.md)
+- [添加人字段需求说明](docs/added-by-requirements.md)
 
 ## v1 已包含
 

@@ -3,8 +3,8 @@
   "short_name": "种草",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f6f7f2",
-  "theme_color": "#26342f",
+  "background_color": "#f5edda",
+  "theme_color": "#f7efdc",
   "description": "快速保存、整理和计划想去的店铺与菜品。",
   "icons": [
     {

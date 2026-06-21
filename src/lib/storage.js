@@ -1,4 +1,4 @@
-import { DATA_VERSION, DEFAULT_TAGS, createInitialState } from "./domain.js";
+import { DATA_VERSION, DEFAULT_TAGS, createInitialState, normalizeAddedBy } from "./domain.js";
 
 const DB_NAME = "zhongcao-db";
 const DB_VERSION = 1;
@@ -41,7 +41,36 @@ export function migrateState(rawState) {
     }
   }
 
+  migrateAddedByFields(state);
+
   return state;
+}
+
+function migrateAddedByFields(state) {
+  for (const item of state.inboxItems) {
+    item.addedBy = coerceStoredAddedBy(item.addedBy);
+  }
+
+  for (const store of state.stores) {
+    store.addedBy = coerceStoredAddedBy(store.addedBy);
+    store.sourceLinks = Array.isArray(store.sourceLinks) ? store.sourceLinks : [];
+
+    for (const sourceLink of store.sourceLinks) {
+      sourceLink.addedBy = coerceStoredAddedBy(sourceLink.addedBy, store.addedBy);
+    }
+  }
+
+  for (const dish of state.dishes) {
+    dish.addedBy = coerceStoredAddedBy(dish.addedBy);
+  }
+}
+
+function coerceStoredAddedBy(value, fallback = "unknown") {
+  try {
+    return normalizeAddedBy(value, { allowUnknown: true });
+  } catch {
+    return normalizeAddedBy(fallback, { allowUnknown: true });
+  }
 }
 
 async function readState() {

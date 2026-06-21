@@ -1,4 +1,4 @@
-export const DATA_VERSION = 1;
+export const DATA_VERSION = 2;
 
 export const DEFAULT_TAGS = [
   { name: "火锅", group: "category" },
@@ -25,6 +25,10 @@ export const DEFAULT_TAGS = [
   isDefault: true
 }));
 
+export const ADDED_BY_VALUES = ["xiaowang", "xiaozhang", "unknown"];
+
+const ACTIVE_ADDED_BY_VALUES = new Set(["xiaowang", "xiaozhang"]);
+const ALL_ADDED_BY_VALUES = new Set(ADDED_BY_VALUES);
 const FEEDBACK_VALUES = new Set(["want_again", "ok", "no_again"]);
 const COLLECTIONS = new Set([
   "inboxItems",
@@ -64,7 +68,7 @@ export function createInitialState() {
   };
 }
 
-export function createSourceLink(preview) {
+export function createSourceLink(preview, addedBy = "unknown") {
   return {
     id: createId("source"),
     platform: preview.platform || "未知平台",
@@ -72,17 +76,19 @@ export function createSourceLink(preview) {
     normalizedUrl: preview.normalizedUrl || preview.originalUrl || "",
     title: preview.title || "",
     imageUrl: preview.imageUrl || "",
+    addedBy: normalizeAddedBy(addedBy, { allowUnknown: true }),
     contentType: preview.contentType || "unknown",
     parseStatus: preview.status || "failed",
     createdAt: nowIso()
   };
 }
 
-export function createInboxItem({ preview, fallbackTitle = "", note = "" }) {
+export function createInboxItem({ preview, fallbackTitle = "", note = "", addedBy = "" }) {
   const safePreview = preview || {};
   const parsedTitle = String(safePreview.title || "").trim();
   const manualTitle = String(fallbackTitle || "").trim();
   const parseStatus = normalizeParseStatus(safePreview.status);
+  const normalizedAddedBy = normalizeAddedBy(addedBy);
 
   if (parseStatus !== "success" && !manualTitle) {
     throw new Error("解析失败时必须填写标题、店名或菜名");
@@ -100,8 +106,10 @@ export function createInboxItem({ preview, fallbackTitle = "", note = "" }) {
     title,
     userLabel: manualTitle,
     previewImageUrl: safePreview.imageUrl || "",
+    addedBy: normalizedAddedBy,
     contentType: safePreview.contentType || "unknown",
     failureReason: safePreview.failureReason || "",
+    suggested: normalizeSuggestion(safePreview.suggested),
     note: String(note || "").trim(),
     triageStatus: "pending",
     deletedAt: null,
@@ -121,6 +129,7 @@ export function applyInboxReparsePreview(item, preview) {
   item.normalizedUrl = safePreview.normalizedUrl || item.normalizedUrl || safePreview.originalUrl || "";
   item.contentType = safePreview.contentType || item.contentType || "unknown";
   item.failureReason = safePreview.failureReason || "";
+  item.suggested = normalizeSuggestion(safePreview.suggested);
 
   if (!hasManualTitle && parseStatus === "success" && parsedTitle) {
     item.title = parsedTitle;
@@ -134,6 +143,19 @@ export function applyInboxReparsePreview(item, preview) {
 
   item.updatedAt = nowIso();
   return item;
+}
+
+function normalizeSuggestion(suggestion = {}) {
+  return {
+    storeName: String(suggestion.storeName || "").trim(),
+    city: String(suggestion.city || "").trim(),
+    businessDistrict: String(suggestion.businessDistrict || "").trim(),
+    addressNote: String(suggestion.addressNote || "").trim(),
+    tagNames: Array.isArray(suggestion.tagNames)
+      ? [...new Set(suggestion.tagNames.map((tag) => String(tag || "").trim()).filter(Boolean))]
+      : [],
+    note: String(suggestion.note || "").trim()
+  };
 }
 
 export function createCustomTag(state, name, group = "custom") {
@@ -175,9 +197,11 @@ export function organizeInboxItem(state, inboxItemId, options) {
 
   if (template === "store" || template === "store-dish") {
     const createdAt = nowIso();
+    const addedBy = coerceAddedBy(item.addedBy);
     store = {
       id: createId("store"),
       name: String(options?.storeName || item.title).trim(),
+      addedBy,
       city: String(options?.city || "").trim(),
       businessDistrict: String(options?.businessDistrict || "").trim(),
       addressNote: String(options?.addressNote || "").trim(),
@@ -199,6 +223,7 @@ export function organizeInboxItem(state, inboxItemId, options) {
       id: createId("dish"),
       storeId: store?.id || options?.storeId || null,
       name: String(options?.dishName || item.title).trim(),
+      addedBy: coerceAddedBy(item.addedBy),
       status: "want",
       tagNames,
       coverImageUrl: item.previewImageUrl || "",
@@ -237,6 +262,9 @@ export function updateStore(state, storeId, values = {}) {
   }
   if (hasOwn(values, "addressNote")) store.addressNote = String(values.addressNote || "").trim();
   if (hasOwn(values, "coverImageUrl")) store.coverImageUrl = String(values.coverImageUrl || "").trim();
+  if (hasOwn(values, "addedBy")) {
+    store.addedBy = normalizeAddedBy(values.addedBy, { allowUnknown: true });
+  }
   if (hasOwn(values, "note")) store.note = String(values.note || "").trim();
 
   store.updatedAt = nowIso();
@@ -259,6 +287,9 @@ export function updateDish(state, dishId, values = {}) {
     dish.storeId = values.storeId ? String(values.storeId).trim() : null;
   }
   if (hasOwn(values, "coverImageUrl")) dish.coverImageUrl = String(values.coverImageUrl || "").trim();
+  if (hasOwn(values, "addedBy")) {
+    dish.addedBy = normalizeAddedBy(values.addedBy, { allowUnknown: true });
+  }
   if (hasOwn(values, "note")) dish.note = String(values.note || "").trim();
 
   dish.updatedAt = nowIso();
@@ -307,6 +338,13 @@ export function filterByTags(items, requiredTags = []) {
   return activeItems(items).filter((item) =>
     tags.every((tagName) => (item.tagNames || []).includes(tagName))
   );
+}
+
+export function filterByAddedBy(items, addedBy = "all") {
+  if (!addedBy || addedBy === "all") return activeItems(items);
+
+  const targetAddedBy = normalizeAddedBy(addedBy, { allowUnknown: true });
+  return activeItems(items).filter((item) => coerceAddedBy(item.addedBy) === targetAddedBy);
 }
 
 export function createPlan(state, { targetType, targetId, date }) {
@@ -393,24 +431,22 @@ export function createVisitRecord(state, { storeId = null, dishId = null, date, 
   };
   state.visitRecords.push(visit);
 
-  if (storeId) updateTargetStatus(state, "store", storeId, "visited");
-  if (dishId) updateTargetStatus(state, "dish", dishId, "eaten");
-  visit.completedPlanIds = completeScheduledPlansForTarget(
-    state,
-    storeId ? "store" : "dish",
-    storeId || dishId,
-    date
-  );
+  const targetType = storeId ? "store" : "dish";
+  const targetId = storeId || dishId;
+  visit.completedPlanIds = completeScheduledPlansForTarget(state, targetType, targetId, date);
+  visit.notInterestedPlanStatuses =
+    feedback === "no_again" ? markUnfinishedPlansNotInterestedForVisit(state, targetType, targetId) : [];
 
+  recalculateTargetStatus(state, targetType, targetId);
   touchState(state);
   return visit;
 }
 
-export function addSourceLink(state, storeId, preview) {
+export function addSourceLink(state, storeId, preview, addedBy = "unknown") {
   const store = state.stores.find((candidate) => candidate.id === storeId);
   if (!store) throw new Error("找不到店铺");
 
-  const sourceLink = createSourceLink(preview);
+  const sourceLink = createSourceLink(preview, addedBy);
   const exists = store.sourceLinks.some(
     (link) => link.normalizedUrl && link.normalizedUrl === sourceLink.normalizedUrl
   );
@@ -450,6 +486,7 @@ export function mergeInboxItemIntoStore(state, inboxItemId, storeId, options = {
       id: createId("dish"),
       storeId: store.id,
       name: String(options.dishName).trim(),
+      addedBy: coerceAddedBy(item.addedBy),
       status: "want",
       tagNames: options.tagNames || [],
       coverImageUrl: item.previewImageUrl || "",
@@ -480,7 +517,29 @@ export function findPotentialDuplicateStores(state, name, businessDistrict = "")
   });
 }
 
+export function findDuplicateSource(state, normalizedUrl) {
+  const url = String(normalizedUrl || "").trim();
+  if (!url) return null;
+
+  const inboxItem = activeItems(state.inboxItems).find(
+    (item) => item.normalizedUrl === url || item.sourceUrl === url
+  );
+  if (inboxItem) return { collection: "inboxItems", item: inboxItem };
+
+  const store = activeItems(state.stores).find((candidate) =>
+    (candidate.sourceLinks || []).some(
+      (link) => link.normalizedUrl === url || link.originalUrl === url
+    )
+  );
+  if (store) return { collection: "stores", item: store };
+
+  return null;
+}
+
 export function restoreTargetToWishlist(state, targetType, targetId) {
+  const target = getTarget(state, targetType, targetId);
+  if (!target) return null;
+
   for (const plan of state.plans) {
     if (plan.targetType === targetType && plan.targetId === targetId && plan.status === "not_interested") {
       plan.status = "backlog";
@@ -488,9 +547,15 @@ export function restoreTargetToWishlist(state, targetType, targetId) {
     }
   }
 
+  const ignoredVisitIds = new Set(target.ignoredVisitIdsForStatus || []);
+  for (const visit of activeVisitsForTarget(state, targetType, targetId)) {
+    ignoredVisitIds.add(visit.id);
+  }
+  target.ignoredVisitIdsForStatus = [...ignoredVisitIds];
+
   recalculateTargetStatus(state, targetType, targetId);
   touchState(state);
-  return getTarget(state, targetType, targetId);
+  return target;
 }
 
 export function softDeleteItem(state, collectionName, id) {
@@ -505,6 +570,7 @@ export function softDeleteItem(state, collectionName, id) {
   }
   if (collectionName === "visitRecords") {
     restoreCompletedPlansForVisit(state, item);
+    restoreNotInterestedPlansForVisit(state, item);
     recalculateTargetStatusForVisit(state, item);
   }
   touchState(state);
@@ -560,6 +626,7 @@ function sourceLinkFromInboxItem(item) {
     normalizedUrl: item.normalizedUrl,
     title: item.title,
     imageUrl: item.previewImageUrl,
+    addedBy: coerceAddedBy(item.addedBy),
     contentType: item.contentType,
     parseStatus: item.parseStatus,
     createdAt: nowIso()
@@ -576,6 +643,22 @@ function findInCollection(state, collectionName, id) {
 
 function normalizeParseStatus(status) {
   return status === "success" ? "success" : status === "partial" ? "partial" : "failed";
+}
+
+export function normalizeAddedBy(value, { allowUnknown = false } = {}) {
+  const normalizedValue = String(value || "").trim();
+  const allowedValues = allowUnknown ? ALL_ADDED_BY_VALUES : ACTIVE_ADDED_BY_VALUES;
+
+  if (allowedValues.has(normalizedValue)) return normalizedValue;
+  throw new Error(allowUnknown ? "添加人必须是小王、小张或未标记" : "添加人必须选择小王或小张");
+}
+
+function coerceAddedBy(value, fallback = "unknown") {
+  try {
+    return normalizeAddedBy(value, { allowUnknown: true });
+  } catch {
+    return fallback;
+  }
 }
 
 function updateTargetStatus(state, targetType, targetId, status) {
@@ -627,12 +710,31 @@ function markTargetPlansNotInterested(state, targetType, targetId) {
       !plan.deletedAt &&
       plan.targetType === targetType &&
       plan.targetId === targetId &&
-      plan.status !== "completed"
+      (plan.status === "scheduled" || plan.status === "backlog")
     ) {
       plan.status = "not_interested";
       plan.updatedAt = nowIso();
     }
   }
+}
+
+function markUnfinishedPlansNotInterestedForVisit(state, targetType, targetId) {
+  const affectedPlanStatuses = [];
+
+  for (const plan of state.plans) {
+    if (
+      !plan.deletedAt &&
+      plan.targetType === targetType &&
+      plan.targetId === targetId &&
+      (plan.status === "scheduled" || plan.status === "backlog")
+    ) {
+      affectedPlanStatuses.push({ id: plan.id, status: plan.status });
+      plan.status = "not_interested";
+      plan.updatedAt = nowIso();
+    }
+  }
+
+  return affectedPlanStatuses;
 }
 
 function cascadeSoftDeleteTarget(state, targetType, targetId, deletedAt) {
@@ -699,15 +801,12 @@ function recalculateTargetStatus(state, targetType, targetId) {
   const target = getTarget(state, targetType, targetId);
   if (!target) return null;
 
-  const hasActiveVisit = state.visitRecords.some(
-    (candidate) =>
-      !candidate.deletedAt &&
-      ((targetType === "store" && candidate.storeId === targetId) ||
-        (targetType === "dish" && candidate.dishId === targetId))
+  const effectiveVisits = activeVisitsForTarget(state, targetType, targetId).filter(
+    (visit) => !isVisitIgnoredForTargetStatus(target, visit)
   );
-
-  if (hasActiveVisit) {
-    return updateTargetStatus(state, targetType, targetId, targetType === "store" ? "visited" : "eaten");
+  const hasEffectiveNoAgain = effectiveVisits.some((visit) => visit.feedback === "no_again");
+  if (hasEffectiveNoAgain) {
+    return updateTargetStatus(state, targetType, targetId, "not_interested");
   }
 
   const hasScheduledPlan = state.plans.some(
@@ -724,7 +823,29 @@ function recalculateTargetStatus(state, targetType, targetId) {
       plan.targetId === targetId &&
       plan.status === "not_interested"
   );
-  return updateTargetStatus(state, targetType, targetId, hasNotInterestedPlan ? "not_interested" : "want");
+  if (hasNotInterestedPlan) {
+    return updateTargetStatus(state, targetType, targetId, "not_interested");
+  }
+
+  const latestVisit = effectiveVisits[effectiveVisits.length - 1];
+  if (latestVisit?.feedback === "want_again") {
+    return updateTargetStatus(state, targetType, targetId, "want");
+  }
+  if (latestVisit?.feedback === "ok") {
+    return updateTargetStatus(state, targetType, targetId, targetType === "store" ? "visited" : "eaten");
+  }
+
+  return updateTargetStatus(state, targetType, targetId, "want");
+}
+
+function activeVisitsForTarget(state, targetType, targetId) {
+  return state.visitRecords.filter(
+    (candidate) => !candidate.deletedAt && isVisitForTarget(candidate, targetType, targetId)
+  );
+}
+
+function isVisitIgnoredForTargetStatus(target, visit) {
+  return Array.isArray(target.ignoredVisitIdsForStatus) && target.ignoredVisitIdsForStatus.includes(visit.id);
 }
 
 function restoreCompletedPlansForVisit(state, visit) {
@@ -749,6 +870,27 @@ function restoreCompletedPlansForVisit(state, visit) {
   }
 }
 
+function restoreNotInterestedPlansForVisit(state, visit) {
+  if (visit.feedback !== "no_again") return;
+
+  const targetType = visit.storeId ? "store" : "dish";
+  const targetId = visit.storeId || visit.dishId;
+  if (!targetId) return;
+  if (hasActiveEffectiveNoAgainForTarget(state, targetType, targetId)) return;
+
+  const affectedPlanStatuses = Array.isArray(visit.notInterestedPlanStatuses)
+    ? visit.notInterestedPlanStatuses
+    : [];
+
+  for (const affectedPlan of affectedPlanStatuses) {
+    const plan = state.plans.find((candidate) => candidate.id === affectedPlan.id);
+    if (!plan || plan.deletedAt || plan.status !== "not_interested") continue;
+
+    plan.status = affectedPlan.status === "scheduled" ? "scheduled" : "backlog";
+    plan.updatedAt = nowIso();
+  }
+}
+
 function completePlansForRestoredVisit(state, visit) {
   const targetType = visit.storeId ? "store" : "dish";
   const targetId = visit.storeId || visit.dishId;
@@ -762,10 +904,32 @@ function completePlansForRestoredVisit(state, visit) {
         plan.updatedAt = nowIso();
       }
     }
-    return;
+  } else {
+    visit.completedPlanIds = completeScheduledPlansForTarget(state, targetType, targetId, visit.date);
   }
 
-  visit.completedPlanIds = completeScheduledPlansForTarget(state, targetType, targetId, visit.date);
+  if (visit.feedback === "no_again") {
+    if (Array.isArray(visit.notInterestedPlanStatuses) && visit.notInterestedPlanStatuses.length) {
+      for (const affectedPlan of visit.notInterestedPlanStatuses) {
+        const plan = state.plans.find((candidate) => candidate.id === affectedPlan.id);
+        if (!plan || plan.deletedAt || !["scheduled", "backlog"].includes(plan.status)) continue;
+
+        plan.status = "not_interested";
+        plan.updatedAt = nowIso();
+      }
+    } else {
+      visit.notInterestedPlanStatuses = markUnfinishedPlansNotInterestedForVisit(state, targetType, targetId);
+    }
+  }
+}
+
+function hasActiveEffectiveNoAgainForTarget(state, targetType, targetId) {
+  const target = getTarget(state, targetType, targetId);
+  if (!target) return false;
+
+  return activeVisitsForTarget(state, targetType, targetId).some(
+    (visit) => visit.feedback === "no_again" && !isVisitIgnoredForTargetStatus(target, visit)
+  );
 }
 
 function hasActiveVisitForTargetDate(state, targetType, targetId, date) {

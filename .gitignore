@@ -3,3 +3,9 @@ node_modules/
 .env
 .env.*
 npm-debug.log*
+
+# Build output
+dist/
+
+# Local-only Claude Code settings
+.claude/settings.local.json

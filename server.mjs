@@ -3,11 +3,12 @@ import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { buildPreviewFromUrl, inferPlatform } from "./public/lib/link-preview.js";
+import { buildPreviewFromUrl, inferPlatform } from "./src/lib/link-preview.js";
 
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4173);
-const PUBLIC_DIR = new URL("./public/", import.meta.url);
+const BUILD_DIR = new URL("./dist/", import.meta.url);
+const PUBLIC_ASSET_DIR = new URL("./public/", import.meta.url);
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -68,23 +69,48 @@ async function handleLinkPreview(request, response) {
 
 async function serveStatic(requestUrl, response) {
   const pathname = requestUrl.pathname === "/" ? "/index.html" : decodeURIComponent(requestUrl.pathname);
-  const fileUrl = new URL(`.${pathname}`, PUBLIC_DIR);
+  const buildFileUrl = new URL(`.${pathname}`, BUILD_DIR);
+  const publicFileUrl = new URL(`.${pathname}`, PUBLIC_ASSET_DIR);
+  const extension = extname(pathname);
 
-  if (!isInsidePublic(fileUrl)) {
+  if (!isInsideDirectory(buildFileUrl, BUILD_DIR)) {
     response.writeHead(403);
     response.end("Forbidden");
     return;
   }
 
   try {
-    const data = await readFile(fileUrl);
+    const data = await readFile(buildFileUrl);
     response.writeHead(200, {
-      "Content-Type": MIME_TYPES[extname(fileURLToPath(fileUrl))] || "application/octet-stream",
+      "Content-Type": MIME_TYPES[extname(fileURLToPath(buildFileUrl))] || "application/octet-stream",
       "Cache-Control": "no-cache"
     });
     response.end(data);
-  } catch {
-    const fallback = await readFile(new URL("./index.html", PUBLIC_DIR));
+  } catch (buildError) {
+    if (pathname !== "/index.html" && isInsideDirectory(publicFileUrl, PUBLIC_ASSET_DIR)) {
+      try {
+        const data = await readFile(publicFileUrl);
+        response.writeHead(200, {
+          "Content-Type": MIME_TYPES[extname(fileURLToPath(publicFileUrl))] || "application/octet-stream",
+          "Cache-Control": "no-cache"
+        });
+        response.end(data);
+        return;
+      } catch {
+        // Fall back to the React app shell below.
+      }
+    }
+
+    if (extension) {
+      response.writeHead(404, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache"
+      });
+      response.end("Not Found");
+      return;
+    }
+
+    const fallback = await readFile(new URL("./index.html", BUILD_DIR));
     response.writeHead(200, { "Content-Type": MIME_TYPES[".html"] });
     response.end(fallback);
   }
@@ -170,8 +196,8 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function isInsidePublic(fileUrl) {
-  const publicPath = fileURLToPath(PUBLIC_DIR);
+function isInsideDirectory(fileUrl, directoryUrl) {
+  const publicPath = fileURLToPath(directoryUrl);
   const filePath = fileURLToPath(fileUrl);
   return pathToFileURL(filePath).href.startsWith(pathToFileURL(publicPath).href);
 }
@@ -209,4 +235,4 @@ function isDirectRun() {
   return process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 }
 
-export { server };
+export { serveStatic, server };
