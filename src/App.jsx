@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Heart,
   Inbox,
   RotateCw,
@@ -641,10 +643,13 @@ function WishlistScreen(props) {
   return (
     <>
       <Filters {...props} />
-      <div className="hidden grid-cols-2 gap-1 rounded-2xl border border-emerald-950/12 bg-white/70 p-1 sm:grid">
-        <button className={viewMode === "grid" ? "toggle-active" : "toggle-button"} onClick={() => setViewMode("grid")}>图列</button>
-        <button className={viewMode === "list" ? "toggle-active" : "toggle-button"} onClick={() => setViewMode("list")}>列表</button>
-      </div>
+      <SegmentedControl
+        ariaLabel="视图模式"
+        className="hidden sm:grid"
+        value={viewMode}
+        options={[{ value: "grid", label: "图列" }, { value: "list", label: "列表" }]}
+        onChange={setViewMode}
+      />
       <SectionHead title="近期想去" description="按标签、商圈、时间段筛出当下合适的选择。" count={`${items.length} 个`} />
       <div className={viewMode === "grid" ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"}>
         {items.length ? items.map(({ type, item }) => <WishCard key={`${type}:${item.id}`} type={type} item={item} {...props} />) : <EmptyState>先去收件箱整理一条线索</EmptyState>}
@@ -912,9 +917,11 @@ function CalendarScreen(props) {
 }
 
 function CalendarGrid({ plans, selectedPlanDate, setSelectedPlanDate }) {
-  const anchor = new Date(`${selectedPlanDate || today()}T00:00:00`);
-  const year = anchor.getFullYear();
-  const month = anchor.getMonth();
+  const [viewMonth, setViewMonth] = useState(() => {
+    const start = new Date(`${selectedPlanDate || today()}T00:00:00`);
+    return { year: start.getFullYear(), month: start.getMonth() };
+  });
+  const { year, month } = viewMonth;
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
   const planDates = new Set(plans.map((plan) => plan.date));
@@ -927,6 +934,13 @@ function CalendarGrid({ plans, selectedPlanDate, setSelectedPlanDate }) {
   }
   while (cells.length % 7 !== 0) cells.push(null);
 
+  function shiftMonth(delta) {
+    setViewMonth((current) => {
+      const next = new Date(current.year, current.month + delta, 1);
+      return { year: next.getFullYear(), month: next.getMonth() };
+    });
+  }
+
   return (
     <section className="panel">
       <div className="flex items-center justify-between gap-3">
@@ -934,7 +948,15 @@ function CalendarGrid({ plans, selectedPlanDate, setSelectedPlanDate }) {
           <p className="mini-label">日历视图</p>
           <h2 className="font-display text-3xl text-zinc-950">{year}年{month + 1}月</h2>
         </div>
-        {selectedPlanDate && <button className="text-button" type="button" onClick={() => setSelectedPlanDate("")}>看全部</button>}
+        <div className="flex items-center gap-2">
+          {selectedPlanDate && <button className="text-button" type="button" onClick={() => setSelectedPlanDate("")}>看全部</button>}
+          <button className="cal-nav" type="button" aria-label="上个月" onClick={() => shiftMonth(-1)}>
+            <ChevronLeft size={18} strokeWidth={2.4} />
+          </button>
+          <button className="cal-nav" type="button" aria-label="下个月" onClick={() => shiftMonth(1)}>
+            <ChevronRight size={18} strokeWidth={2.4} />
+          </button>
+        </div>
       </div>
       <div className="grid grid-cols-7 gap-1 pt-2 text-center text-sm font-black text-zinc-500" aria-hidden="true">
         {["日", "一", "二", "三", "四", "五", "六"].map((day) => <span key={day}>{day}</span>)}
@@ -1171,7 +1193,10 @@ function BottomNav({ tab, setTab }) {
 function Toast({ message, undo, onUndo }) {
   return (
     <div className="toast" role="status" aria-live="polite" aria-atomic="true">
-      <span className="min-w-0 break-words font-semibold">{message}</span>
+      <span className="toast-icon" aria-hidden="true">
+        <CheckCircle2 size={16} strokeWidth={2.4} />
+      </span>
+      <span className="min-w-0 flex-1 break-words font-semibold">{message}</span>
       {undo && (
         <button className="undo-button" type="button" onClick={onUndo}>
           <Undo2 size={16} />
@@ -1203,22 +1228,41 @@ function Field({ label, children }) {
   );
 }
 
-function AddedBySegmentedControl({ value, options, onChange }) {
+function SegmentedControl({ options, value, onChange, ariaLabel, className = "" }) {
+  const activeIndex = Math.max(0, options.findIndex((option) => option.value === value));
   return (
-    <div className="grid grid-cols-2 gap-2 rounded-2xl border border-emerald-950/12 bg-white/70 p-1" role="radiogroup" aria-label="添加人">
+    <div
+      className={`segmented ${className}`.trim()}
+      role="radiogroup"
+      aria-label={ariaLabel}
+      style={{ "--seg-count": options.length, "--seg-index": activeIndex }}
+    >
+      <span className="segmented-thumb" aria-hidden="true" />
       {options.map((option) => (
         <button
-          key={option}
-          className={value === option ? "toggle-active" : "toggle-button"}
+          key={option.value}
+          className="segmented-option"
           type="button"
           role="radio"
-          aria-checked={value === option}
-          onClick={() => onChange(option)}
+          aria-checked={value === option.value}
+          data-active={value === option.value}
+          onClick={() => onChange(option.value)}
         >
-          {ADDED_BY_LABELS[option]}
+          {option.label}
         </button>
       ))}
     </div>
+  );
+}
+
+function AddedBySegmentedControl({ value, options, onChange }) {
+  return (
+    <SegmentedControl
+      ariaLabel="添加人"
+      value={value}
+      options={options.map((option) => ({ value: option, label: ADDED_BY_LABELS[option] }))}
+      onChange={onChange}
+    />
   );
 }
 

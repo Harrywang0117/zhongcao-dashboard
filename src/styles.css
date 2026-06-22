@@ -23,34 +23,34 @@
   --font-weight-black: 800;
 
   /* --- Brand palette ---------------------------------------------- */
-  --color-persimmon: #c0461d;
-  --color-persimmon-bright: #db5a2e;
-  --color-saffron: #dc9a26;
-  --color-olive: #4f5d3c;
-  --color-paper: #f5edda;
+  --color-persimmon: #d2452a;
+  --color-persimmon-bright: #e85d38;
+  --color-saffron: #e2a32c;
+  --color-olive: #5b6a45;
+  --color-paper: #fbf7f2;
 
-  /* --- Remapped accent (was emerald) → persimmon ----------------- */
-  --color-emerald-950: #b23f1c; /* hero: buttons, selected, focus */
-  --color-emerald-900: #9d3717;
-  --color-emerald-800: #cb5430; /* hover / small accent labels */
-  --color-emerald-100: #f5d9c5;
-  --color-emerald-50: #fbe9dc; /* warm persimmon tint */
+  /* --- Remapped accent (was emerald) → clean appetizing red ------ */
+  --color-emerald-950: #c5421f; /* hero: buttons, selected, focus */
+  --color-emerald-900: #a8371a;
+  --color-emerald-800: #d2452a; /* hover / small accent labels */
+  --color-emerald-100: #f8d7c8;
+  --color-emerald-50: #fceae1; /* clean warm tint */
 
-  /* --- Remapped neutrals (was zinc) → warm paper/ink ------------- */
-  --color-zinc-950: #2b2018; /* espresso ink — headings */
-  --color-zinc-900: #352a20;
-  --color-zinc-700: #4d4034;
-  --color-zinc-600: #5f5142; /* body text */
-  --color-zinc-500: #7b6c5b; /* muted, AA on paper */
-  --color-zinc-400: #a89684; /* faint icons / placeholders */
-  --color-zinc-300: #d4c7b1;
-  --color-zinc-200: #e7dbc4; /* hairlines */
-  --color-zinc-100: #efe6d4;
-  --color-zinc-50: #f4ecda; /* subtle fills */
+  /* --- Remapped neutrals (was zinc) → soft warm grey/ink -------- */
+  --color-zinc-950: #271f1a; /* ink — headings */
+  --color-zinc-900: #322820;
+  --color-zinc-700: #4b4038;
+  --color-zinc-600: #5d5249; /* body text */
+  --color-zinc-500: #7c6f63; /* muted, AA on paper */
+  --color-zinc-400: #a99c8e; /* faint icons / placeholders */
+  --color-zinc-300: #d6cbbd;
+  --color-zinc-200: #ebe3d8; /* hairlines */
+  --color-zinc-100: #f2ece3;
+  --color-zinc-50: #f7f2ea; /* subtle fills */
 
-  /* --- Surfaces (was stone) → warm white -------------------------- */
-  --color-stone-50: #fffcf5;
-  --color-stone-100: #f8f1e2;
+  /* --- Surfaces (was stone) → crisp warm white ------------------- */
+  --color-stone-50: #ffffff;
+  --color-stone-100: #faf6f0;
 
   /* --- Semantic warm alert (was red) keeps an alert read --------- */
   --color-red-900: #7c2912;
@@ -80,17 +80,16 @@
   body {
     min-height: 100%;
     margin: 0;
-    color: #2b2018;
-    background-color: #f5edda;
+    color: #271f1a;
+    background-color: #fbf7f2;
     background-image:
-      radial-gradient(125% 95% at 92% -8%, rgba(220, 154, 38, 0.16), transparent 46%),
-      radial-gradient(120% 90% at 4% 0%, rgba(192, 70, 29, 0.12), transparent 42%),
-      radial-gradient(140% 120% at 50% 108%, rgba(79, 93, 60, 0.1), transparent 55%),
-      linear-gradient(180deg, #fbf5e8 0%, #f4ebd7 60%, #f1e7d1 100%);
+      radial-gradient(120% 85% at 95% -10%, rgba(226, 163, 44, 0.08), transparent 48%),
+      radial-gradient(115% 80% at 2% 0%, rgba(210, 69, 42, 0.05), transparent 44%),
+      linear-gradient(180deg, #fdfbf8 0%, #fbf7f2 58%, #f8f3ec 100%);
     background-attachment: fixed;
   }
 
-  /* paper grain overlay — sits above the wash, below content */
+  /* whisper of paper grain — kept subtle to avoid a dusty cast */
   body::before {
     content: "";
     position: fixed;
@@ -98,7 +97,7 @@
     z-index: 0;
     pointer-events: none;
     background-image: var(--paper-grain);
-    opacity: 0.4;
+    opacity: 0.1;
     mix-blend-mode: multiply;
   }
 
@@ -144,11 +143,11 @@
   select {
     min-height: 44px;
     width: 100%;
-    border: 1px solid #e4d8bf;
+    border: 1px solid #e8dfd2;
     border-radius: 12px;
-    background: #fffdf8;
+    background: #ffffff;
     padding: 12px 14px;
-    color: #2b2018;
+    color: #271f1a;
     font-size: 16px;
     outline: none;
     box-shadow: inset 0 1px 2px rgba(74, 47, 22, 0.05);
@@ -163,7 +162,7 @@
   input:hover,
   textarea:hover,
   select:hover {
-    border-color: #d8c8a8;
+    border-color: #dccfbd;
   }
 
   input:focus-visible,
@@ -172,15 +171,15 @@
   button:focus-visible,
   summary:focus-visible,
   a:focus-visible {
-    outline: 2px solid #b23f1c;
+    outline: 2px solid #c5421f;
     outline-offset: 2px;
   }
 
   input:focus-visible,
   textarea:focus-visible,
   select:focus-visible {
-    border-color: #b23f1c;
-    background: #fffefb;
+    border-color: #c5421f;
+    background: #ffffff;
     box-shadow:
       0 0 0 3px rgba(192, 70, 29, 0.18),
       inset 0 1px 2px rgba(74, 47, 22, 0.04);
@@ -208,29 +207,29 @@
   /* --- App bar --------------------------------------------------- */
   .app-bar {
     @apply sticky top-0 z-20 px-4 pb-3 pt-4;
-    background: linear-gradient(180deg, rgba(250, 244, 231, 0.96), rgba(248, 241, 226, 0.82));
-    border-bottom: 1px solid rgba(192, 70, 29, 0.12);
-    backdrop-filter: saturate(1.3) blur(12px);
+    background: linear-gradient(180deg, rgba(253, 251, 248, 0.92), rgba(251, 247, 242, 0.78));
+    border-bottom: 1px solid rgba(39, 31, 26, 0.07);
+    backdrop-filter: saturate(1.2) blur(14px);
   }
 
   .brand-mark {
     @apply grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-white;
-    background: linear-gradient(150deg, #c0461d 0%, #a23617 58%, #8c4a1e 100%);
-    box-shadow: 0 8px 18px -8px rgba(178, 63, 28, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    background: linear-gradient(150deg, #e2562f 0%, #cc4220 55%, #b23a1c 100%);
+    box-shadow: 0 8px 18px -8px rgba(197, 66, 31, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.28);
   }
 
   .stat-pill {
     @apply grid min-w-16 place-items-center rounded-2xl px-3 py-1.5 text-center;
-    background: #fffdf8;
-    border: 1px solid rgba(192, 70, 29, 0.14);
+    background: #ffffff;
+    border: 1px solid rgba(39, 31, 26, 0.08);
     box-shadow: var(--shadow-tight);
   }
 
   /* --- Summary rail (bento stats) -------------------------------- */
   .summary-card {
     @apply grid min-w-0 place-items-center gap-1 rounded-2xl px-2 py-3 text-center;
-    background: linear-gradient(180deg, #fffdf8, #fbf4e6);
-    border: 1px solid rgba(192, 70, 29, 0.1);
+    background: #ffffff;
+    border: 1px solid rgba(39, 31, 26, 0.08);
     box-shadow: var(--shadow-tight);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
   }
@@ -243,17 +242,17 @@
   /* --- Panels & cards -------------------------------------------- */
   .panel {
     @apply grid gap-4 rounded-3xl border p-5;
-    border-color: rgba(192, 70, 29, 0.12);
-    background: rgba(255, 252, 245, 0.92);
+    border-color: rgba(39, 31, 26, 0.08);
+    background: rgba(255, 255, 255, 0.96);
     box-shadow: var(--shadow-soft);
   }
 
   .capture-panel {
     @apply relative overflow-hidden;
     background:
-      radial-gradient(120% 100% at 100% 0%, rgba(220, 154, 38, 0.18), transparent 52%),
-      linear-gradient(165deg, #fffefb 0%, #fdf3e2 100%);
-    border-color: rgba(192, 70, 29, 0.18);
+      radial-gradient(120% 100% at 100% 0%, rgba(226, 163, 44, 0.1), transparent 52%),
+      linear-gradient(165deg, #ffffff 0%, #fdf6ee 100%);
+    border-color: rgba(197, 66, 31, 0.16);
   }
 
   /* stitched journal margin */
@@ -266,7 +265,7 @@
     pointer-events: none;
     background: repeating-linear-gradient(
       180deg,
-      #c0461d 0 9px,
+      #c5421f 0 9px,
       transparent 9px 16px
     );
     opacity: 0.55;
@@ -279,8 +278,8 @@
 
   .item-card {
     @apply overflow-hidden rounded-3xl border;
-    border-color: rgba(192, 70, 29, 0.12);
-    background: rgba(255, 252, 245, 0.96);
+    border-color: rgba(39, 31, 26, 0.08);
+    background: #ffffff;
     box-shadow: var(--shadow-soft);
     transition: transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1),
       box-shadow 0.22s ease, border-color 0.2s ease;
@@ -289,7 +288,7 @@
   @media (hover: hover) {
     .item-card:hover {
       transform: translateY(-3px);
-      border-color: rgba(192, 70, 29, 0.28);
+      border-color: rgba(197, 66, 31, 0.24);
       box-shadow: var(--shadow-lift);
     }
   }
@@ -298,7 +297,7 @@
   .primary-button {
     @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-5 text-white;
     font-weight: 700;
-    background: linear-gradient(180deg, #c34c22, #ad3c18);
+    background: linear-gradient(180deg, #db5230, #c2401d);
     box-shadow: 0 10px 22px -10px rgba(178, 63, 28, 0.85),
       inset 0 1px 0 rgba(255, 255, 255, 0.22);
     transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
@@ -317,17 +316,17 @@
   .secondary-button {
     @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border px-4;
     font-weight: 600;
-    color: #4d4034;
-    border-color: #e4d8bf;
-    background: #fffdf8;
+    color: #4b4038;
+    border-color: #e8dfd2;
+    background: #ffffff;
     transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease,
       transform 0.18s ease;
   }
 
   .secondary-button:hover {
-    border-color: rgba(192, 70, 29, 0.4);
-    background: #fbe9dc;
-    color: #9d3717;
+    border-color: rgba(197, 66, 31, 0.38);
+    background: #fceae1;
+    color: #a8371a;
   }
 
   .secondary-button:active {
@@ -337,11 +336,11 @@
   .text-button {
     @apply inline-flex min-h-11 items-center justify-self-start border-0 bg-transparent px-1;
     font-weight: 700;
-    color: #b23f1c;
+    color: #c5421f;
   }
 
   .text-button:hover {
-    color: #9d3717;
+    color: #a8371a;
     text-decoration: underline;
     text-underline-offset: 3px;
   }
@@ -355,13 +354,13 @@
   }
 
   .toggle-button:hover {
-    color: #9d3717;
+    color: #a8371a;
   }
 
   .toggle-active {
     @apply min-h-11 rounded-xl px-3 text-white;
     font-weight: 700;
-    background: linear-gradient(180deg, #c34c22, #ad3c18);
+    background: linear-gradient(180deg, #db5230, #c2401d);
     box-shadow: 0 6px 14px -8px rgba(178, 63, 28, 0.8);
   }
 
@@ -369,39 +368,39 @@
   .chip {
     @apply inline-flex min-h-11 items-center rounded-full border px-3.5 py-2 text-sm;
     font-weight: 600;
-    color: #4d4034;
-    border-color: #e4d8bf;
-    background: #fffdf8;
+    color: #4b4038;
+    border-color: #e8dfd2;
+    background: #ffffff;
     transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
   }
 
   .chip:hover {
     border-color: rgba(192, 70, 29, 0.4);
-    background: #fbe9dc;
-    color: #9d3717;
+    background: #fceae1;
+    color: #a8371a;
   }
 
   .chip-selected {
     @apply inline-flex min-h-11 items-center rounded-full px-3.5 py-2 text-sm text-white;
     font-weight: 700;
-    background: linear-gradient(180deg, #c34c22, #ad3c18);
+    background: linear-gradient(180deg, #db5230, #c2401d);
     box-shadow: 0 6px 14px -8px rgba(178, 63, 28, 0.7);
   }
 
   .chip-passive {
     @apply inline-flex min-h-7 items-center rounded-full border px-3 py-1 text-sm;
     font-weight: 600;
-    color: #6c5d4c;
-    border-color: #ece0c9;
-    background: #f7f0e0;
+    color: #6a5d50;
+    border-color: #ebe3d8;
+    background: #f5efe6;
   }
 
   .chip-overflow {
     @apply inline-flex min-h-7 items-center rounded-full border px-3 py-1 text-sm;
     font-weight: 700;
-    color: #9d3717;
+    color: #a8371a;
     border-color: rgba(192, 70, 29, 0.2);
-    background: #fbe9dc;
+    background: #fceae1;
   }
 
   .added-by-chip {
@@ -429,18 +428,18 @@
 
   .action-panel {
     @apply grid gap-2 border-t pt-3;
-    border-color: #ece0c9;
+    border-color: #ebe3d8;
   }
 
   .details-panel {
     @apply border-t pt-3;
-    border-color: #ece0c9;
+    border-color: #ebe3d8;
   }
 
   .details-panel summary {
     @apply flex min-h-11 cursor-pointer items-center gap-1.5;
     font-weight: 700;
-    color: #b23f1c;
+    color: #c5421f;
     list-style: none;
   }
 
@@ -467,7 +466,7 @@
   /* --- Covers ---------------------------------------------------- */
   .cover {
     @apply relative w-full overflow-hidden;
-    background: linear-gradient(150deg, #fbe9dc, #faf0d6);
+    background: linear-gradient(150deg, #fceae1, #fbf1da);
   }
 
   .cover::after {
@@ -495,7 +494,7 @@
 
   .wish-card-actions {
     @apply border-t;
-    border-color: #ece0c9;
+    border-color: #ebe3d8;
   }
 
   .wish-card .details-panel {
@@ -515,10 +514,10 @@
     @apply fixed bottom-0 left-1/2 z-30 grid -translate-x-1/2 grid-cols-5 gap-1 rounded-3xl border p-2;
     width: min(calc(100% - 20px), 560px);
     bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
-    border-color: rgba(192, 70, 29, 0.12);
-    background: rgba(255, 252, 245, 0.86);
+    border-color: rgba(39, 31, 26, 0.08);
+    background: rgba(255, 255, 255, 0.82);
     box-shadow: var(--shadow-nav);
-    backdrop-filter: saturate(1.4) blur(16px);
+    backdrop-filter: saturate(1.3) blur(18px);
   }
 
   .nav-item {
@@ -530,12 +529,12 @@
   }
 
   .nav-item:hover {
-    color: #b23f1c;
+    color: #c5421f;
   }
 
   .nav-item-active {
     color: #fff;
-    background: linear-gradient(180deg, #c34c22, #ad3c18);
+    background: linear-gradient(180deg, #db5230, #c2401d);
     box-shadow: 0 8px 18px -10px rgba(178, 63, 28, 0.85);
   }
 
@@ -566,15 +565,15 @@
   .empty-state {
     @apply grid place-items-center gap-3 rounded-3xl px-4 py-10 text-center text-base;
     font-weight: 600;
-    color: #7b6c5b;
-    border: 1.5px dashed rgba(192, 70, 29, 0.22);
-    background: rgba(255, 252, 245, 0.6);
+    color: #7c6f63;
+    border: 1.5px dashed rgba(197, 66, 31, 0.24);
+    background: rgba(255, 255, 255, 0.5);
   }
 
   .empty-state-icon {
     @apply grid h-12 w-12 place-items-center rounded-2xl;
-    color: #c0461d;
-    background: #fbe9dc;
+    color: #c5421f;
+    background: #fceae1;
   }
 
   .loading-screen {
@@ -586,9 +585,9 @@
   .cal-cell {
     @apply relative grid min-h-12 place-items-center rounded-xl border text-base;
     font-weight: 700;
-    border-color: #ece0c9;
-    background: #fffdf8;
-    color: #2b2018;
+    border-color: #ebe3d8;
+    background: #ffffff;
+    color: #271f1a;
     transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
   }
 
@@ -598,14 +597,14 @@
 
   .cal-cell-today {
     border-color: rgba(192, 70, 29, 0.55);
-    background: #fbe9dc;
-    color: #9d3717;
+    background: #fceae1;
+    color: #a8371a;
   }
 
   .cal-cell-selected {
     color: #fff !important;
     border-color: transparent;
-    background: linear-gradient(180deg, #c34c22, #ad3c18);
+    background: linear-gradient(180deg, #db5230, #c2401d);
     box-shadow: 0 8px 16px -8px rgba(178, 63, 28, 0.7);
   }
 
@@ -620,9 +619,9 @@
 
   .date-block {
     @apply grid min-h-28 place-items-center p-3 text-center;
-    border-right: 1px solid rgba(192, 70, 29, 0.12);
-    background: linear-gradient(165deg, #fbe9dc, #faf0d6);
-    color: #9d3717;
+    border-right: 1px solid rgba(197, 66, 31, 0.14);
+    background: linear-gradient(165deg, #fceae1, #fbf1da);
+    color: #a8371a;
   }
 
   .feedback-badge {
@@ -631,6 +630,70 @@
     color: #45512f;
     border-color: rgba(79, 93, 60, 0.22);
     background: #eef0df;
+  }
+
+  /* --- Segmented control (animated sliding thumb) ---------------- */
+  .segmented {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(var(--seg-count, 2), 1fr);
+    padding: 4px;
+    border-radius: 14px;
+    background: #f4eee3;
+    border: 1px solid #ebe3d8;
+  }
+
+  .segmented-thumb {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 4px;
+    width: calc((100% - 8px) / var(--seg-count, 2));
+    transform: translateX(calc(var(--seg-index, 0) * 100%));
+    border-radius: 10px;
+    background: linear-gradient(180deg, #db5230, #c2401d);
+    box-shadow: 0 6px 14px -8px rgba(178, 63, 28, 0.75);
+    transition: transform 0.28s cubic-bezier(0.4, 0.15, 0.2, 1);
+  }
+
+  .segmented-option {
+    position: relative;
+    z-index: 1;
+    min-height: 40px;
+    border: 0;
+    background: transparent;
+    font-weight: 700;
+    color: #5d5249;
+    transition: color 0.2s ease;
+  }
+
+  .segmented-option[data-active="true"] {
+    color: #ffffff;
+  }
+
+  .segmented-option:not([data-active="true"]):hover {
+    color: #a8371a;
+  }
+
+  /* --- Toast status icon (sonner-style) -------------------------- */
+  .toast-icon {
+    @apply grid h-6 w-6 shrink-0 place-items-center rounded-lg text-white;
+    background: linear-gradient(180deg, #db5230, #c2401d);
+  }
+
+  /* --- Calendar month-nav buttons -------------------------------- */
+  .cal-nav {
+    @apply grid h-10 w-10 shrink-0 place-items-center rounded-xl border;
+    color: #5d5249;
+    border-color: #e8dfd2;
+    background: #ffffff;
+    transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+  }
+
+  .cal-nav:hover {
+    border-color: rgba(197, 66, 31, 0.4);
+    background: #fceae1;
+    color: #a8371a;
   }
 }
 
