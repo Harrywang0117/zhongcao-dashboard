@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 export function readServerConfig(env = process.env) {
   const port = Number(env.PORT || 4173);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -6,6 +8,7 @@ export function readServerConfig(env = process.env) {
 
   return {
     host: String(env.HOST || "127.0.0.1"),
-    port
+    port,
+    dataDir: resolve(String(env.DATA_DIR || "data"))
   };
 }

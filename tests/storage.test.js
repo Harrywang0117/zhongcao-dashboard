@@ -105,10 +105,14 @@ test("migrates missing added by fields without dropping existing data", () => {
 
   assert.equal(state.meta.dataVersion, DATA_VERSION);
   assert.equal(state.inboxItems[0].addedBy, "unknown");
+  assert.equal(state.inboxItems[0].metadataStatus, "unknown");
+  assert.equal(state.inboxItems[0].imageStatus, "not_found");
   assert.equal(state.stores[0].addedBy, "unknown");
   assert.equal(state.stores[0].sourceLinks[0].addedBy, "unknown");
   assert.equal(state.stores[0].sourceLinks[0].sharedUrl, "https://example.com/a");
   assert.equal(state.stores[0].sourceLinks[0].resolvedUrl, "https://example.com/a");
+  assert.equal(state.stores[0].sourceLinks[0].metadataStatus, "unknown");
+  assert.equal(state.stores[0].sourceLinks[0].imageStatus, "not_found");
   assert.equal(state.stores[1].addedBy, "xiaozhang");
   assert.equal(state.stores[1].sourceLinks[0].addedBy, "xiaozhang");
   assert.equal(state.stores[1].sourceLinks[1].addedBy, "xiaowang");

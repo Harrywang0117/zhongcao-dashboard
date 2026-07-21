@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   ADDED_BY_VALUES,
+  DATA_VERSION,
   DEFAULT_TAGS,
   addSourceLink,
   applyInboxReparsePreview,
@@ -84,7 +85,7 @@ function makeDish(overrides = {}) {
 test("initial state contains default searchable tags and data version", () => {
   const state = createInitialState();
 
-  assert.equal(state.meta.dataVersion, 3);
+  assert.equal(state.meta.dataVersion, DATA_VERSION);
   assert.ok(DEFAULT_TAGS.some((tag) => tag.name === "火锅"));
   assert.ok(state.tags.some((tag) => tag.name === "晚餐"));
   assert.deepEqual(ADDED_BY_VALUES, ["xiaowang", "xiaozhang", "unknown"]);
@@ -199,6 +200,34 @@ test("successful previews can be saved directly into inbox", () => {
   assert.equal(item.platform, "小红书");
   assert.equal(item.triageStatus, "pending");
   assert.equal(item.addedBy, "xiaowang");
+});
+
+test("inbox and organized source links preserve separate metadata and image states", () => {
+  const preview = {
+    ...successPreview,
+    metadataStatus: "blocked",
+    metadataFailureCode: "platform_login_required",
+    metadataFailureReason: "平台要求登录",
+    imageUrl: "",
+    imageStatus: "blocked",
+    imageSource: "none",
+    imageFailureCode: "platform_login_required",
+    imageFailureReason: "可手动添加封面"
+  };
+  const item = createInboxItem({ preview, addedBy: "xiaowang" });
+  const state = createInitialState();
+  state.inboxItems.push(item);
+
+  organizeInboxItem(state, item.id, { template: "store", storeName: "老城火锅收藏" });
+  const source = state.stores[0].sourceLinks[0];
+
+  assert.equal(item.parseStatus, "success");
+  assert.equal(item.metadataStatus, "blocked");
+  assert.equal(item.metadataFailureCode, "platform_login_required");
+  assert.equal(item.imageStatus, "blocked");
+  assert.equal(source.metadataStatus, "blocked");
+  assert.equal(source.metadataFailureReason, "平台要求登录");
+  assert.equal(source.imageFailureReason, "可手动添加封面");
 });
 
 test("finds duplicate source links in inbox and store sources", () => {
