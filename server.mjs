@@ -9,8 +9,15 @@ import {
   supportsMetadataFetch
 } from "./src/lib/link-preview.js";
 import { readServerConfig } from "./server/config.mjs";
+import {
+  CoverStoreError,
+  MAX_COVER_BYTES,
+  fetchAndStoreCover,
+  readStoredCover,
+  storeCoverBytes
+} from "./server/cover-store.mjs";
 
-const { host: HOST, port: PORT } = readServerConfig();
+const { host: HOST, port: PORT, dataDir: DATA_DIR } = readServerConfig();
 const BUILD_DIR = new URL("./dist/", import.meta.url);
 const PUBLIC_ASSET_DIR = new URL("./public/", import.meta.url);
 const MIME_TYPES = {
@@ -31,27 +38,49 @@ const MAX_PREVIEW_BYTES = 180_000;
 const MAX_CONCURRENT_PREVIEWS = 4;
 let activePreviewFetches = 0;
 
-export async function handleRequest(request, response) {
-  const requestUrl = new URL(request.url, `http://${request.headers.host}`);
+export function createRequestHandler({
+  dataDir = DATA_DIR,
+  fetchImpl = globalThis.fetch,
+  coverLookupImpl
+} = {}) {
+  return async function requestHandler(request, response) {
+    const requestUrl = new URL(request.url, `http://${request.headers.host}`);
 
-  if (request.method === "GET" && requestUrl.pathname === "/healthz") {
-    sendJson(response, 200, { status: "ok" });
-    return;
-  }
+    if (request.method === "GET" && requestUrl.pathname === "/healthz") {
+      sendJson(response, 200, { status: "ok" });
+      return;
+    }
 
-  if (request.method === "POST" && requestUrl.pathname === "/api/link-preview") {
-    await handleLinkPreview(request, response);
-    return;
-  }
+    if (request.method === "POST" && requestUrl.pathname === "/api/link-preview") {
+      await handleLinkPreview(request, response, { dataDir, fetchImpl, coverLookupImpl });
+      return;
+    }
 
-  if (request.method !== "GET") {
-    sendJson(response, 405, { error: "Method Not Allowed" });
-    return;
-  }
+    if (request.method === "POST" && requestUrl.pathname === "/api/cover-upload") {
+      await handleCoverUpload(request, response, { dataDir });
+      return;
+    }
 
-  await serveStatic(requestUrl, response);
+    if (request.method === "POST" && requestUrl.pathname === "/api/cover-fetch") {
+      await handleCoverFetch(request, response, { dataDir, fetchImpl, coverLookupImpl });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname.startsWith("/covers/")) {
+      await serveCover(requestUrl.pathname, response, dataDir);
+      return;
+    }
+
+    if (request.method !== "GET") {
+      sendJson(response, 405, { error: "Method Not Allowed" });
+      return;
+    }
+
+    await serveStatic(requestUrl, response);
+  };
 }
 
+export const handleRequest = createRequestHandler();
 const server = createServer(handleRequest);
 
 if (isDirectRun()) {
@@ -60,7 +89,7 @@ if (isDirectRun()) {
   });
 }
 
-async function handleLinkPreview(request, response) {
+async function handleLinkPreview(request, response, { dataDir, fetchImpl, coverLookupImpl }) {
   try {
     const body = await readJson(request);
     const url = String(body.url || "").trim();
@@ -71,8 +100,16 @@ async function handleLinkPreview(request, response) {
       return;
     }
 
-    const metadata = await fetchOpenGraphMetadata(localPreview.normalizedUrl, localPreview.platform);
-    sendJson(response, 200, buildPreviewFromUrl(url, metadata));
+    const metadata = await fetchOpenGraphMetadata(localPreview.normalizedUrl, localPreview.platform, {
+      fetchImpl
+    });
+    const enrichedMetadata = await snapshotPreviewImage(metadata, {
+      dataDir,
+      fetchImpl,
+      coverLookupImpl,
+      sourcePageUrl: metadata.resolvedUrl || localPreview.normalizedUrl
+    });
+    sendJson(response, 200, buildPreviewFromUrl(url, enrichedMetadata));
   } catch (error) {
     sendJson(response, 200, {
       status: "failed",
@@ -81,9 +118,97 @@ async function handleLinkPreview(request, response) {
       normalizedUrl: "",
       title: "",
       imageUrl: "",
+      metadataStatus: "failed",
+      metadataFailureCode: "preview_failed",
+      metadataFailureReason: "链接解析失败",
+      imageStatus: "failed",
+      imageSource: "none",
+      imageFailureCode: "preview_failed",
+      imageFailureReason: "链接解析失败",
       contentType: "unknown",
+      failureCode: "preview_failed",
       failureReason: error.message || "解析失败"
     });
+  }
+}
+
+async function snapshotPreviewImage(metadata, options) {
+  if (!metadata.imageSourceUrl) return metadata;
+
+  try {
+    const stored = await fetchAndStoreCover(metadata.imageSourceUrl, {
+      dataDir: options.dataDir,
+      fetchImpl: options.fetchImpl,
+      lookupImpl: options.coverLookupImpl,
+      sourcePageUrl: options.sourcePageUrl,
+      imageSource: "automatic"
+    });
+    return {
+      ...metadata,
+      ...stored,
+      imageFailureCode: "",
+      imageFailureReason: ""
+    };
+  } catch (error) {
+    const failure = normalizeCoverError(error);
+    return {
+      ...metadata,
+      imageUrl: "",
+      imageStatus: "download_failed",
+      imageSource: "none",
+      imageFailureCode: failure.code,
+      imageFailureReason: failure.message
+    };
+  }
+}
+
+async function handleCoverUpload(request, response, { dataDir }) {
+  try {
+    const bytes = await readRequestBytes(request, MAX_COVER_BYTES);
+    const stored = await storeCoverBytes(bytes, request.headers["content-type"] || "", {
+      dataDir,
+      imageSource: "manual"
+    });
+    sendJson(response, 201, stored);
+  } catch (error) {
+    sendCoverError(response, error);
+  }
+}
+
+async function handleCoverFetch(request, response, { dataDir, fetchImpl, coverLookupImpl }) {
+  try {
+    const body = await readJson(request);
+    const stored = await fetchAndStoreCover(String(body.url || "").trim(), {
+      dataDir,
+      fetchImpl,
+      lookupImpl: coverLookupImpl,
+      sourcePageUrl: String(body.sourcePageUrl || "").trim(),
+      imageSource: "automatic"
+    });
+    sendJson(response, 201, stored);
+  } catch (error) {
+    sendCoverError(response, error);
+  }
+}
+
+async function serveCover(pathname, response, dataDir) {
+  try {
+    const cover = await readStoredCover(pathname, dataDir);
+    response.writeHead(200, {
+      ...SECURITY_HEADERS,
+      "Content-Type": cover.contentType,
+      "Content-Length": cover.data.length,
+      "Cache-Control": "public, max-age=31536000, immutable"
+    });
+    response.end(cover.data);
+  } catch (error) {
+    const failure = normalizeCoverError(error);
+    response.writeHead(failure.statusCode, {
+      ...SECURITY_HEADERS,
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-store"
+    });
+    response.end(failure.statusCode === 404 ? "Not Found" : "Cover unavailable");
   }
 }
 
@@ -143,7 +268,11 @@ async function serveStatic(requestUrl, response) {
   }
 }
 
-export async function fetchOpenGraphMetadata(url, expectedPlatform) {
+export async function fetchOpenGraphMetadata(
+  url,
+  expectedPlatform,
+  { fetchImpl = globalThis.fetch } = {}
+) {
   if (!isSafePreviewFetchUrl(url, expectedPlatform)) {
     return previewFetchFailure("unsafe_url", "链接不符合安全抓取规则");
   }
@@ -162,7 +291,7 @@ export async function fetchOpenGraphMetadata(url, expectedPlatform) {
         return previewFetchFailure("unsafe_redirect", "链接跳转到了不安全的地址");
       }
 
-      const response = await fetch(currentUrl, {
+      const response = await fetchImpl(currentUrl, {
         signal: controller.signal,
         redirect: "manual",
         headers: {
@@ -180,6 +309,8 @@ export async function fetchOpenGraphMetadata(url, expectedPlatform) {
         if (!isSafePreviewFetchUrl(nextUrl, expectedPlatform)) {
           return previewFetchFailure("unsafe_redirect", "链接跳转到了其他平台或不安全地址");
         }
+        const barrier = detectPlatformBarrier(nextUrl, expectedPlatform);
+        if (barrier) return previewBlocked(barrier, nextUrl);
         currentUrl = nextUrl;
         continue;
       }
@@ -198,11 +329,25 @@ export async function fetchOpenGraphMetadata(url, expectedPlatform) {
       }
 
       const html = await readResponseText(response, MAX_PREVIEW_BYTES);
+      const title = extractMeta(html, "og:title") || extractTitle(html);
+      const description = extractMeta(html, "og:description") || extractMeta(html, "description");
+      const barrier = detectPlatformBarrier(resolvedUrl, expectedPlatform, { title, description, html });
+      if (barrier) return previewBlocked(barrier, resolvedUrl);
+
+      const rawImageUrl = extractMeta(html, "og:image") || extractMeta(html, "twitter:image");
+      const imageSourceUrl = resolveMetadataUrl(rawImageUrl, resolvedUrl);
       return {
-        title: extractMeta(html, "og:title") || extractTitle(html),
-        description: extractMeta(html, "og:description") || extractMeta(html, "description"),
-        imageUrl: extractMeta(html, "og:image") || extractMeta(html, "twitter:image"),
-        resolvedUrl
+        metadataStatus: "success",
+        title,
+        description,
+        imageSourceUrl,
+        imageUrl: "",
+        imageStatus: imageSourceUrl ? "discovered" : "not_found",
+        imageSource: "none",
+        imageFailureCode: imageSourceUrl ? "" : "metadata_image_missing",
+        imageFailureReason: imageSourceUrl ? "" : "平台页面没有提供可用封面",
+        resolvedUrl,
+        observedUrl: resolvedUrl
       };
     }
     return previewFetchFailure("too_many_redirects", "平台链接跳转次数过多");
@@ -259,7 +404,67 @@ async function readResponseText(response, maxBytes) {
 }
 
 function previewFetchFailure(failureCode, failureReason) {
-  return { failureCode, failureReason };
+  return {
+    metadataStatus: "failed",
+    imageStatus: "failed",
+    imageSource: "none",
+    imageFailureCode: failureCode,
+    imageFailureReason: failureReason,
+    failureCode,
+    failureReason
+  };
+}
+
+function previewBlocked(barrier, observedUrl) {
+  return {
+    metadataStatus: "blocked",
+    imageStatus: "blocked",
+    imageSource: "none",
+    imageFailureCode: barrier.code,
+    imageFailureReason: barrier.reason,
+    failureCode: barrier.code,
+    failureReason: barrier.reason,
+    observedUrl
+  };
+}
+
+function detectPlatformBarrier(url, platform, page = {}) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+
+  if (platform === "大众点评" && parsed.pathname.includes("/shopinfo/login-redirect")) {
+    return {
+      code: "platform_login_required",
+      reason: "大众点评向服务器返回了登录页面，可手动添加封面"
+    };
+  }
+
+  const genericTitles = new Set(["大众点评", "小红书", "抖音", "抖音-记录美好生活"]);
+  if (page.html && genericTitles.has(String(page.title || "").trim()) && !page.description) {
+    const hasImage = Boolean(extractMeta(page.html, "og:image") || extractMeta(page.html, "twitter:image"));
+    if (!hasImage && /login|captcha|verify|challenge/i.test(`${parsed.pathname}${parsed.search}`)) {
+      return {
+        code: "platform_access_blocked",
+        reason: "平台限制了服务器访问，可手动添加封面"
+      };
+    }
+  }
+
+  return null;
+}
+
+function resolveMetadataUrl(value, baseUrl) {
+  if (!value) return "";
+  try {
+    const resolved = new URL(value, baseUrl);
+    return resolved.protocol === "https:" ? resolved.toString() : "";
+  } catch {
+    return "";
+  }
 }
 
 function extractMeta(html, key) {
@@ -316,6 +521,50 @@ function readJson(request) {
       }
     });
     request.on("error", reject);
+  });
+}
+
+function readRequestBytes(request, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    request.on("data", (chunk) => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        reject(new CoverStoreError("image_too_large", "图片不能超过 5MB", 413));
+        request.destroy();
+        return;
+      }
+      chunks.push(Buffer.from(chunk));
+    });
+    request.on("end", () => resolve(Buffer.concat(chunks, total)));
+    request.on("error", reject);
+  });
+}
+
+function normalizeCoverError(error) {
+  if (error instanceof CoverStoreError) {
+    return {
+      code: error.code,
+      message: error.message,
+      statusCode: error.statusCode
+    };
+  }
+  return {
+    code: "cover_store_failed",
+    message: "封面暂时无法保存",
+    statusCode: 500
+  };
+}
+
+function sendCoverError(response, error) {
+  const failure = normalizeCoverError(error);
+  sendJson(response, failure.statusCode, {
+    imageStatus: "failed",
+    imageSource: "none",
+    imageUrl: "",
+    imageFailureCode: failure.code,
+    imageFailureReason: failure.message
   });
 }
 

@@ -157,6 +157,27 @@ test("fills tested dianping city ids and category tags", () => {
   assert.deepEqual(preview.suggested.tagNames, ["日料"]);
 });
 
+test("keeps the original dianping shop id when metadata is blocked by login", () => {
+  const url = "https://m.dianping.com/shopinfo/k30Ld5XSgFERQgYE?cityid=1609";
+  const preview = buildPreviewFromUrl(`【净味鲜烧烤(天府大悦城店)】 ${url}`, {
+    metadataStatus: "blocked",
+    imageStatus: "blocked",
+    imageSource: "none",
+    failureCode: "platform_login_required",
+    failureReason: "大众点评向服务器返回了登录页面，可手动添加封面",
+    imageFailureCode: "platform_login_required",
+    imageFailureReason: "大众点评向服务器返回了登录页面，可手动添加封面",
+    observedUrl: "https://m.dianping.com/shopinfo/login-redirect"
+  });
+
+  assert.equal(preview.status, "success");
+  assert.equal(preview.normalizedUrl, url);
+  assert.equal(preview.sourceKey, "dianping:store:k30Ld5XSgFERQgYE");
+  assert.equal(preview.metadataStatus, "blocked");
+  assert.equal(preview.imageStatus, "blocked");
+  assert.equal(preview.imageUrl, "");
+});
+
 test("recognizes weibo as an unsupported source while preserving its stable id", () => {
   const preview = buildPreviewFromUrl("https://weibo.com/5244108114/5322166456299780");
 

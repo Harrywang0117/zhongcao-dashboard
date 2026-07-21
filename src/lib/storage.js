@@ -104,6 +104,13 @@ function migrateSourceFields(state) {
     item.authorName = String(item.authorName || "").trim();
     item.hashtags = normalizeStoredStrings(item.hashtags);
     item.failureCode = String(item.failureCode || "").trim();
+    item.metadataStatus = String(item.metadataStatus || "unknown");
+    item.metadataFailureCode = String(item.metadataFailureCode || "").trim();
+    item.metadataFailureReason = String(item.metadataFailureReason || "").trim();
+    item.imageStatus = String(item.imageStatus || (item.previewImageUrl ? "stored" : "not_found"));
+    item.imageSource = String(item.imageSource || (item.previewImageUrl ? "automatic" : "none"));
+    item.imageFailureCode = String(item.imageFailureCode || "").trim();
+    item.imageFailureReason = String(item.imageFailureReason || "").trim();
   }
 
   for (const entity of [...state.stores, ...state.dishes]) {
@@ -126,6 +133,13 @@ function migrateStoredSourceLink(link) {
   link.authorName = String(link.authorName || "").trim();
   link.hashtags = normalizeStoredStrings(link.hashtags);
   link.failureCode = String(link.failureCode || "").trim();
+  link.metadataStatus = String(link.metadataStatus || "unknown");
+  link.metadataFailureCode = String(link.metadataFailureCode || "").trim();
+  link.metadataFailureReason = String(link.metadataFailureReason || "").trim();
+  link.imageStatus = String(link.imageStatus || (link.imageUrl ? "stored" : "not_found"));
+  link.imageSource = String(link.imageSource || (link.imageUrl ? "automatic" : "none"));
+  link.imageFailureCode = String(link.imageFailureCode || "").trim();
+  link.imageFailureReason = String(link.imageFailureReason || "").trim();
 }
 
 function normalizeStoredStrings(values) {
