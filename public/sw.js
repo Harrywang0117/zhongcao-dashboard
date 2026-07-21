@@ -1,4 +1,4 @@
-const CACHE_NAME = "zhongcao-react-v1";
+const CACHE_NAME = "zhongcao-react-v2";
 const ASSETS = [
   "/",
   "/index.html",
@@ -21,7 +21,15 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
+  const requestUrl = new URL(event.request.url);
+  if (
+    event.request.method !== "GET" ||
+    requestUrl.origin !== self.location.origin ||
+    requestUrl.pathname.startsWith("/api/") ||
+    requestUrl.pathname === "/healthz"
+  ) {
+    return;
+  }
 
   event.respondWith(
     fetch(event.request)

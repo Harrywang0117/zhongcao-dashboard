@@ -7,6 +7,7 @@ const mainSource = readFileSync(new URL("../src/main.jsx", import.meta.url), "ut
 const stylesSource = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
 const indexSource = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const serverSource = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+const serviceWorkerSource = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
 const packageSource = readFileSync(new URL("../package.json", import.meta.url), "utf8");
 
 test("React app mounts through the Vite entrypoint", () => {
@@ -43,8 +44,9 @@ test("legacy public app shell and duplicated public libs are removed", () => {
 test("React UI keeps accessible navigation and icon labels", () => {
   assert.match(appSource, /aria-label="主导航"/);
   assert.match(appSource, /aria-current=\{active \? "page" : undefined\}/);
+  assert.match(appSource, /aria-label="去收件箱保存新线索"/);
   assert.match(appSource, /label="重新解析线索"/);
-  assert.match(appSource, /label="移入回收站"/);
+  assert.match(appSource, /移入回收站/);
   assert.match(appSource, /label="撤销轻反馈"/);
 });
 
@@ -61,6 +63,15 @@ test("quick save accepts platform share text and exposes pending state", () => {
   assert.match(appSource, /pendingQuickSave/);
   assert.match(appSource, /disabled=\{pending\}/);
   assert.match(appSource, /保存中\.\.\./);
+});
+
+test("source links remain clickable and weibo uses an honest fallback dialog", () => {
+  assert.match(appSource, /target="_blank"/);
+  assert.match(appSource, /rel="noopener noreferrer"/);
+  assert.match(appSource, /打开\{label === "未知平台" \? "原" : label\}内容/);
+  assert.match(appSource, /微博链接暂不支持自动解析/);
+  assert.match(appSource, /这里不会尝试从微信直接唤起大众点评/);
+  assert.match(appSource, /先保存微博链接/);
 });
 
 test("quick save writes a required local added-by value", () => {
@@ -93,30 +104,30 @@ test("calendar date buttons have descriptive accessible names", () => {
   assert.match(appSource, /已有计划/);
 });
 
-test("wishlist tag filtering scales beyond a short chip list", () => {
-  assert.match(appSource, /filtersOpen/);
-  assert.match(appSource, /tagFilterQuery/);
-  assert.match(appSource, /filteredTagGroups/);
-  assert.match(appSource, /标签筛选/);
-  assert.match(appSource, /搜索标签/);
-  assert.match(appSource, /selectedTags\.join\("、"\)/);
+test("wishlist tag filtering uses a quick chip row driven by real tags", () => {
+  assert.match(appSource, /ChipFilters/);
+  assert.match(appSource, /topTagNames/);
+  assert.match(appSource, /filter-chip/);
+  assert.match(appSource, /filterByTags/);
+  assert.match(appSource, /setSelectedTags\(selectedTags\.includes\(tag\)/);
 });
 
 test("wishlist filters and cards expose added-by state", () => {
   assert.match(appSource, /filterByAddedBy/);
   assert.match(appSource, /addedByFilter/);
-  assert.match(appSource, /ADDED_BY_FILTER_OPTIONS/);
-  assert.match(appSource, /添加人：\{addedByFilterLabel\(addedByFilter\)\}/);
-  assert.match(appSource, /ContributorChip addedBy=\{item\.addedBy\}/);
+  assert.match(appSource, /setAddedByFilter\("xiaowang"\)/);
+  assert.match(appSource, /setAddedByFilter\("xiaozhang"\)/);
+  assert.match(appSource, /\$\{addedByLabel\(item\.addedBy\)\}添加/);
 });
 
-test("wishlist cards keep repeated planning controls compact", () => {
-  assert.match(appSource, /wish-card item-card/);
-  assert.match(appSource, /wish-card-actions col-span-2/);
-  assert.match(appSource, /DetailsPanel id=\{`plan:\$\{key\}`\} title="加入日历"/);
-  assert.match(stylesSource, /\.wish-card \.cover/);
-  assert.match(stylesSource, /height:\s*136px !important/);
-  assert.match(stylesSource, /\.wish-card \.details-panel summary/);
+test("wishlist keeps a single feature card plus compact place cards", () => {
+  assert.match(appSource, /FeatureCard/);
+  assert.match(appSource, /PlaceCard/);
+  assert.match(appSource, /PlanRow/);
+  assert.match(appSource, /安排日期/);
+  assert.match(stylesSource, /\.feature-card/);
+  assert.match(stylesSource, /\.feature-cta/);
+  assert.match(stylesSource, /\.place-card/);
 });
 
 test("store and dish edit forms can correct added-by", () => {
@@ -128,8 +139,8 @@ test("store and dish edit forms can correct added-by", () => {
 });
 
 test("dense tag displays are compressed in cards and grouped in profile", () => {
-  assert.match(appSource, /tags\.slice\(0, 3\)/);
-  assert.match(appSource, /hiddenCount/);
+  assert.match(appSource, /tagNames\.slice\(0, 2\)/);
+  assert.match(appSource, /item\.tagNames\.length - 2/);
   assert.match(appSource, /chip-overflow/);
   assert.match(appSource, /tags\.length} 个/);
   assert.match(stylesSource, /\.chip-overflow/);
@@ -144,4 +155,17 @@ test("toast announces status changes and keeps undo visible longer", () => {
 
 test("reduced motion is respected", () => {
   assert.match(stylesSource, /prefers-reduced-motion:\s*reduce/);
+});
+
+test("service worker caches only same-origin static GET requests", () => {
+  assert.match(serviceWorkerSource, /requestUrl\.origin !== self\.location\.origin/);
+  assert.match(serviceWorkerSource, /requestUrl\.pathname\.startsWith\("\/api\/"\)/);
+  assert.match(serviceWorkerSource, /requestUrl\.pathname === "\/healthz"/);
+});
+
+test("profile can download a migration-ready local data backup", () => {
+  assert.match(appSource, /createStateBackup/);
+  assert.match(appSource, /new Blob\(\[backup\.content\]/);
+  assert.match(appSource, /link\.download = backup\.filename/);
+  assert.match(appSource, /导出 JSON 备份/);
 });

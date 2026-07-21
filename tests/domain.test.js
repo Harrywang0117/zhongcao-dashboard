@@ -84,7 +84,7 @@ function makeDish(overrides = {}) {
 test("initial state contains default searchable tags and data version", () => {
   const state = createInitialState();
 
-  assert.equal(state.meta.dataVersion, 2);
+  assert.equal(state.meta.dataVersion, 3);
   assert.ok(DEFAULT_TAGS.some((tag) => tag.name === "火锅"));
   assert.ok(state.tags.some((tag) => tag.name === "晚餐"));
   assert.deepEqual(ADDED_BY_VALUES, ["xiaowang", "xiaozhang", "unknown"]);
@@ -101,7 +101,7 @@ test("failed previews require a user supplied title before saving", () => {
   assert.equal(item.parseStatus, "failed");
 });
 
-test("partial previews require a user supplied title before saving", () => {
+test("partial previews can be saved as recognized links without a manual title", () => {
   const partialPreview = {
     ...successPreview,
     status: "partial",
@@ -109,10 +109,9 @@ test("partial previews require a user supplied title before saving", () => {
     failureReason: "未解析到可识别标题"
   };
 
-  assert.throws(
-    () => createInboxItem({ preview: partialPreview, fallbackTitle: "", addedBy: "xiaowang" }),
-    /标题、店名或菜名/
-  );
+  const linkOnlyItem = createInboxItem({ preview: partialPreview, fallbackTitle: "", addedBy: "xiaowang" });
+  assert.equal(linkOnlyItem.title, "小红书待整理链接");
+  assert.equal(linkOnlyItem.parseStatus, "partial");
 
   const item = createInboxItem({ preview: partialPreview, fallbackTitle: "静安寺火锅", addedBy: "xiaowang" });
   assert.equal(item.title, "静安寺火锅");
@@ -245,6 +244,27 @@ test("finds duplicate source links in inbox and store sources", () => {
   assert.equal(findDuplicateSource(state, successPreview.normalizedUrl).item.id, "store_1");
 });
 
+test("finds duplicate content by stable source key across different share urls", () => {
+  const state = createInitialState();
+  const firstPreview = {
+    ...successPreview,
+    sharedUrl: "https://xhslink.com/a/first",
+    resolvedUrl: "https://www.xiaohongshu.com/explore/note-123",
+    normalizedUrl: "https://www.xiaohongshu.com/explore/note-123",
+    sourceKey: "xiaohongshu:note:note-123"
+  };
+  const inboxItem = createInboxItem({ preview: firstPreview, addedBy: "xiaowang" });
+  state.inboxItems.push(inboxItem);
+
+  const duplicate = findDuplicateSource(
+    state,
+    "https://xhslink.com/a/second",
+    "xiaohongshu:note:note-123"
+  );
+  assert.equal(duplicate.collection, "inboxItems");
+  assert.equal(duplicate.item.id, inboxItem.id);
+});
+
 test("organizes an inbox item into store and dish records", () => {
   const state = createInitialState();
   const inboxItem = createInboxItem({ preview: successPreview, addedBy: "xiaozhang" });
@@ -266,6 +286,7 @@ test("organizes an inbox item into store and dish records", () => {
   assert.equal(result.store.addedBy, "xiaozhang");
   assert.equal(result.dish.addedBy, "xiaozhang");
   assert.equal(result.store.sourceLinks[0].addedBy, "xiaozhang");
+  assert.equal(result.dish.sourceLinks[0].normalizedUrl, successPreview.normalizedUrl);
 });
 
 test("filters stores, dishes, and inbox items by added by", () => {
