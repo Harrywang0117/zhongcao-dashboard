@@ -1,4 +1,4 @@
-export const DATA_VERSION = 2;
+export const DATA_VERSION = 3;
 
 export const DEFAULT_TAGS = [
   { name: "火锅", group: "category" },
@@ -69,13 +69,17 @@ export function createInitialState() {
 }
 
 export function createSourceLink(preview, addedBy = "unknown") {
+  const source = sourceFieldsFromPreview(preview);
   return {
     id: createId("source"),
     platform: preview.platform || "未知平台",
-    originalUrl: preview.originalUrl || preview.normalizedUrl || "",
-    normalizedUrl: preview.normalizedUrl || preview.originalUrl || "",
+    ...source,
     title: preview.title || "",
     imageUrl: preview.imageUrl || "",
+    sourceDescription: String(preview.sourceDescription || "").trim(),
+    authorName: String(preview.authorName || "").trim(),
+    hashtags: normalizeStringList(preview.hashtags),
+    failureCode: String(preview.failureCode || "").trim(),
     addedBy: normalizeAddedBy(addedBy, { allowUnknown: true }),
     contentType: preview.contentType || "unknown",
     parseStatus: preview.status || "failed",
@@ -89,25 +93,36 @@ export function createInboxItem({ preview, fallbackTitle = "", note = "", addedB
   const manualTitle = String(fallbackTitle || "").trim();
   const parseStatus = normalizeParseStatus(safePreview.status);
   const normalizedAddedBy = normalizeAddedBy(addedBy);
+  const platform = safePreview.platform || "未知平台";
+  const source = sourceFieldsFromPreview(safePreview);
+  const parsedFallbackTitle = isGenericLinkTitle(parsedTitle, platform) ? "" : parsedTitle;
+  const defaultLinkTitle = platform !== "未知平台" ? `${platform}待整理链接` : "";
+  const canSaveRecognizedLink = Boolean(source.normalizedUrl && platform !== "未知平台");
 
-  if (parseStatus !== "success" && !manualTitle) {
+  if (parseStatus !== "success" && !manualTitle && !parsedFallbackTitle && !canSaveRecognizedLink) {
     throw new Error("解析失败时必须填写标题、店名或菜名");
   }
 
   const createdAt = nowIso();
-  const title = parseStatus === "success" ? parsedTitle || manualTitle : manualTitle || parsedTitle;
+  const title = parseStatus === "success"
+    ? parsedTitle || manualTitle || defaultLinkTitle
+    : manualTitle || parsedFallbackTitle || defaultLinkTitle;
 
   return {
     id: createId("inbox"),
-    sourceUrl: safePreview.originalUrl || safePreview.normalizedUrl || "",
-    normalizedUrl: safePreview.normalizedUrl || safePreview.originalUrl || "",
-    platform: safePreview.platform || "未知平台",
+    sourceUrl: source.rawShareText || source.sharedUrl,
+    ...source,
+    platform,
     parseStatus,
     title,
     userLabel: manualTitle,
     previewImageUrl: safePreview.imageUrl || "",
+    sourceDescription: String(safePreview.sourceDescription || "").trim(),
+    authorName: String(safePreview.authorName || "").trim(),
+    hashtags: normalizeStringList(safePreview.hashtags),
     addedBy: normalizedAddedBy,
     contentType: safePreview.contentType || "unknown",
+    failureCode: String(safePreview.failureCode || "").trim(),
     failureReason: safePreview.failureReason || "",
     suggested: normalizeSuggestion(safePreview.suggested),
     note: String(note || "").trim(),
@@ -126,8 +141,18 @@ export function applyInboxReparsePreview(item, preview) {
 
   item.parseStatus = parseStatus;
   item.platform = safePreview.platform || item.platform || "未知平台";
-  item.normalizedUrl = safePreview.normalizedUrl || item.normalizedUrl || safePreview.originalUrl || "";
+  const source = sourceFieldsFromPreview(safePreview);
+  item.sourceUrl = source.rawShareText || item.sourceUrl || source.sharedUrl;
+  item.rawShareText = source.rawShareText || item.rawShareText || item.sourceUrl;
+  item.sharedUrl = source.sharedUrl || item.sharedUrl || item.normalizedUrl;
+  item.resolvedUrl = source.resolvedUrl || item.resolvedUrl || item.normalizedUrl;
+  item.normalizedUrl = item.resolvedUrl || item.sharedUrl || item.normalizedUrl;
+  item.sourceKey = source.sourceKey || item.sourceKey || "";
   item.contentType = safePreview.contentType || item.contentType || "unknown";
+  item.sourceDescription = String(safePreview.sourceDescription || item.sourceDescription || "").trim();
+  item.authorName = String(safePreview.authorName || item.authorName || "").trim();
+  item.hashtags = normalizeStringList(safePreview.hashtags?.length ? safePreview.hashtags : item.hashtags);
+  item.failureCode = String(safePreview.failureCode || "").trim();
   item.failureReason = safePreview.failureReason || "";
   item.suggested = normalizeSuggestion(safePreview.suggested);
 
@@ -156,6 +181,38 @@ function normalizeSuggestion(suggestion = {}) {
       : [],
     note: String(suggestion.note || "").trim()
   };
+}
+
+function sourceFieldsFromPreview(preview = {}) {
+  const rawShareText = String(preview.rawShareText || preview.originalUrl || "").trim();
+  const sharedUrl = String(
+    preview.sharedUrl || preview.resolvedUrl || preview.normalizedUrl || ""
+  ).trim();
+  const resolvedUrl = String(preview.resolvedUrl || preview.normalizedUrl || sharedUrl).trim();
+  const normalizedUrl = resolvedUrl || sharedUrl;
+
+  return {
+    rawShareText,
+    originalUrl: rawShareText || sharedUrl,
+    sharedUrl: sharedUrl || normalizedUrl,
+    resolvedUrl: resolvedUrl || normalizedUrl,
+    normalizedUrl,
+    sourceKey: String(preview.sourceKey || "").trim()
+  };
+}
+
+function normalizeStringList(values) {
+  return Array.isArray(values)
+    ? [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))]
+    : [];
+}
+
+function isGenericLinkTitle(title, platform) {
+  return !title || new Set([
+    platform,
+    `${platform}种草线索`,
+    `${platform}待整理链接`
+  ]).has(title);
 }
 
 export function createCustomTag(state, name, group = "custom") {
@@ -226,6 +283,7 @@ export function organizeInboxItem(state, inboxItemId, options) {
       addedBy: coerceAddedBy(item.addedBy),
       status: "want",
       tagNames,
+      sourceLinks: [sourceLinkFromInboxItem(item)],
       coverImageUrl: item.previewImageUrl || "",
       note: String(options?.note || item.note || "").trim(),
       deletedAt: null,
@@ -447,9 +505,7 @@ export function addSourceLink(state, storeId, preview, addedBy = "unknown") {
   if (!store) throw new Error("找不到店铺");
 
   const sourceLink = createSourceLink(preview, addedBy);
-  const exists = store.sourceLinks.some(
-    (link) => link.normalizedUrl && link.normalizedUrl === sourceLink.normalizedUrl
-  );
+  const exists = store.sourceLinks.some((link) => sameSource(link, sourceLink));
 
   if (!exists) {
     store.sourceLinks.push(sourceLink);
@@ -467,9 +523,7 @@ export function mergeInboxItemIntoStore(state, inboxItemId, storeId, options = {
   if (!store) throw new Error("找不到店铺");
 
   const sourceLink = sourceLinkFromInboxItem(item);
-  const exists = store.sourceLinks.some(
-    (link) => link.normalizedUrl && link.normalizedUrl === sourceLink.normalizedUrl
-  );
+  const exists = store.sourceLinks.some((link) => sameSource(link, sourceLink));
   if (!exists) {
     store.sourceLinks.push(sourceLink);
   }
@@ -517,21 +571,25 @@ export function findPotentialDuplicateStores(state, name, businessDistrict = "")
   });
 }
 
-export function findDuplicateSource(state, normalizedUrl) {
+export function findDuplicateSource(state, normalizedUrl, sourceKey = "") {
   const url = String(normalizedUrl || "").trim();
-  if (!url) return null;
+  const key = String(sourceKey || "").trim();
+  if (!url && !key) return null;
 
   const inboxItem = activeItems(state.inboxItems).find(
-    (item) => item.normalizedUrl === url || item.sourceUrl === url
+    (item) => sourceMatches(item, url, key)
   );
   if (inboxItem) return { collection: "inboxItems", item: inboxItem };
 
   const store = activeItems(state.stores).find((candidate) =>
-    (candidate.sourceLinks || []).some(
-      (link) => link.normalizedUrl === url || link.originalUrl === url
-    )
+    (candidate.sourceLinks || []).some((link) => sourceMatches(link, url, key))
   );
   if (store) return { collection: "stores", item: store };
+
+  const dish = activeItems(state.dishes).find((candidate) =>
+    (candidate.sourceLinks || []).some((link) => sourceMatches(link, url, key))
+  );
+  if (dish) return { collection: "dishes", item: dish };
 
   return null;
 }
@@ -622,15 +680,41 @@ function sourceLinkFromInboxItem(item) {
   return {
     id: createId("source"),
     platform: item.platform,
-    originalUrl: item.sourceUrl,
-    normalizedUrl: item.normalizedUrl,
+    rawShareText: item.rawShareText || item.sourceUrl || "",
+    originalUrl: item.rawShareText || item.sourceUrl || item.sharedUrl || "",
+    sharedUrl: item.sharedUrl || item.normalizedUrl || "",
+    resolvedUrl: item.resolvedUrl || item.normalizedUrl || item.sharedUrl || "",
+    normalizedUrl: item.resolvedUrl || item.normalizedUrl || item.sharedUrl || "",
+    sourceKey: item.sourceKey || "",
     title: item.title,
     imageUrl: item.previewImageUrl,
+    sourceDescription: item.sourceDescription || "",
+    authorName: item.authorName || "",
+    hashtags: normalizeStringList(item.hashtags),
+    failureCode: item.failureCode || "",
     addedBy: coerceAddedBy(item.addedBy),
     contentType: item.contentType,
     parseStatus: item.parseStatus,
     createdAt: nowIso()
   };
+}
+
+function sameSource(left, right) {
+  if (left.sourceKey && right.sourceKey) return left.sourceKey === right.sourceKey;
+  const leftUrls = new Set([left.resolvedUrl, left.normalizedUrl, left.sharedUrl].filter(Boolean));
+  return [right.resolvedUrl, right.normalizedUrl, right.sharedUrl].some((url) => leftUrls.has(url));
+}
+
+function sourceMatches(source, url, sourceKey) {
+  if (sourceKey && source.sourceKey === sourceKey) return true;
+  if (!url) return false;
+  return [
+    source.resolvedUrl,
+    source.normalizedUrl,
+    source.sharedUrl,
+    source.sourceUrl,
+    source.originalUrl
+  ].some((candidate) => candidate === url);
 }
 
 function findInCollection(state, collectionName, id) {

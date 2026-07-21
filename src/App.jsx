@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowUpDown,
   CalendarDays,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Heart,
   Inbox,
+  Loader2,
+  Minus,
+  Plus,
   RotateCw,
   Search,
-  SlidersHorizontal,
   Sparkles,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
   Undo2,
   UserRound
@@ -39,7 +45,8 @@ import {
   updateStore
 } from "./lib/domain.js";
 import { buildPreviewFromUrl, platformInitial } from "./lib/link-preview.js";
-import { loadState, saveState } from "./lib/storage.js";
+import { createStateBackup, loadState, saveState } from "./lib/storage.js";
+import { createDemoState, isDemoMode } from "./lib/demo-data.js";
 
 const TAB_LABELS = {
   inbox: "收件箱",
@@ -57,14 +64,6 @@ const TAB_ICONS = {
   profile: UserRound
 };
 
-const STATUS_LABELS = {
-  want: "想去",
-  planned: "已计划",
-  visited: "已去过",
-  eaten: "已吃过",
-  not_interested: "不想去了"
-};
-
 const FEEDBACK_LABELS = {
   want_again: "还想去",
   ok: "一般",
@@ -77,6 +76,12 @@ const FEEDBACK_TOAST_MESSAGES = {
   no_again: "已记录为不想去了"
 };
 
+const FEEDBACK_PILL = {
+  want_again: { cls: "feedback-badge feedback-good", Icon: ThumbsUp },
+  ok: { cls: "feedback-badge feedback-ok", Icon: Minus },
+  no_again: { cls: "feedback-badge feedback-bad", Icon: ThumbsDown }
+};
+
 const ADDED_BY_LABELS = {
   xiaowang: "小王",
   xiaozhang: "小张",
@@ -84,20 +89,19 @@ const ADDED_BY_LABELS = {
 };
 const ACTIVE_ADDED_BY_OPTIONS = ["xiaowang", "xiaozhang"];
 const EDITABLE_ADDED_BY_OPTIONS = ["xiaowang", "xiaozhang", "unknown"];
-const ADDED_BY_FILTER_OPTIONS = ["all", "xiaowang", "xiaozhang", "unknown"];
 const DEFAULT_ADDED_BY = "xiaowang";
 const LAST_ADDED_BY_KEY = "zhongcao-last-added-by";
 
 export default function App() {
   const [state, setState] = useState(null);
   const [tab, setTab] = useState("inbox");
-  const [viewMode, setViewMode] = useState("grid");
   const [query, setQuery] = useState("");
   const [selectedTags, setSelectedTags] = useState([]);
   const [selectedPlanDate, setSelectedPlanDate] = useState("");
   const [toast, setToast] = useState(null);
   const [undo, setUndo] = useState(null);
   const [pendingQuickSave, setPendingQuickSave] = useState(false);
+  const [weiboFallback, setWeiboFallback] = useState(null);
   const [quickDraft, setQuickDraft] = useState(() => createEmptyQuickSaveDraft());
   const [addedByFilter, setAddedByFilter] = useState("all");
   const [openPanels, setOpenPanels] = useState([]);
@@ -106,13 +110,20 @@ export default function App() {
   const [rescheduleDates, setRescheduleDates] = useState({});
   const imageBackfillIds = useRef(new Set());
   const toastTimer = useRef(0);
+  const demoMode = useRef(isDemoMode());
 
   useEffect(() => {
     let mounted = true;
-    loadState().then((loaded) => {
-      if (mounted) setState(loaded);
-    });
-    registerServiceWorker();
+    if (demoMode.current) {
+      // Preview-only: keep demo content purely in memory, never persisted.
+      setTab("wishlist");
+      setState(createDemoState());
+    } else {
+      loadState().then((loaded) => {
+        if (mounted) setState(loaded);
+      });
+      registerServiceWorker();
+    }
     return () => {
       mounted = false;
       window.clearTimeout(toastTimer.current);
@@ -160,7 +171,7 @@ export default function App() {
   }
 
   async function persist(nextState, message = "", undoPayload = null) {
-    const saved = await saveState(nextState);
+    const saved = demoMode.current ? nextState : await saveState(nextState);
     setState(saved);
     if (message) showToast(message, undoPayload);
     return saved;
@@ -192,9 +203,31 @@ export default function App() {
     }
   }
 
+  async function savePreviewToInbox(preview, values) {
+    const fallbackTitle = String(values.fallbackTitle || "").trim();
+    const addedBy = String(values.addedBy || "").trim();
+    const duplicate = findDuplicateSource(state, preview.normalizedUrl, preview.sourceKey);
+    if (duplicate) {
+      showToast(duplicate.collection === "stores" ? "这条链接已经在店铺来源里" : "这条链接已经保存过了");
+      return false;
+    }
+
+    const nextState = structuredClone(state);
+    const item = createInboxItem({ preview, fallbackTitle, note: values.note || "", addedBy });
+    nextState.inboxItems.unshift(item);
+    rememberLastAddedBy(addedBy);
+    setQuickDraft(createEmptyQuickSaveDraft());
+    const message = preview.status === "success"
+      ? "已保存到收件箱"
+      : fallbackTitle
+        ? "已补充关键信息并保存"
+        : "已保存为待整理链接";
+    await persist(nextState, message);
+    return true;
+  }
+
   async function saveInboxFromForm(values) {
     const sourceUrl = String(values.url || "").trim();
-    const fallbackTitle = String(values.fallbackTitle || "").trim();
     const addedBy = String(values.addedBy || "").trim();
     if (!sourceUrl) {
       showToast("先粘贴一个链接");
@@ -209,18 +242,29 @@ export default function App() {
     setPendingQuickSave(true);
     try {
       const preview = await requestLinkPreview(sourceUrl);
-      const duplicate = findDuplicateSource(state, preview.normalizedUrl);
-      if (duplicate) {
-        showToast(duplicate.collection === "stores" ? "这条链接已经在店铺来源里" : "这条链接已经在收件箱里");
+      if (preview.platform === "微博" && preview.failureCode === "unsupported_platform") {
+        const duplicate = findDuplicateSource(state, preview.normalizedUrl, preview.sourceKey);
+        if (duplicate) {
+          showToast("这条微博链接已经保存过了");
+          return;
+        }
+        setWeiboFallback({ preview, values: { ...values, url: sourceUrl, addedBy } });
         return;
       }
+      await savePreviewToInbox(preview, { ...values, addedBy });
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      setPendingQuickSave(false);
+    }
+  }
 
-      const nextState = structuredClone(state);
-      const item = createInboxItem({ preview, fallbackTitle, note: values.note || "", addedBy });
-      nextState.inboxItems.unshift(item);
-      rememberLastAddedBy(addedBy);
-      setQuickDraft(createEmptyQuickSaveDraft());
-      await persist(nextState, preview.status === "success" ? "已保存到收件箱" : "已补充关键信息并保存");
+  async function savePendingWeiboLink() {
+    if (!weiboFallback || pendingQuickSave) return;
+    setPendingQuickSave(true);
+    try {
+      const saved = await savePreviewToInbox(weiboFallback.preview, weiboFallback.values);
+      if (saved) setWeiboFallback(null);
     } catch (error) {
       showToast(error.message);
     } finally {
@@ -301,11 +345,7 @@ export default function App() {
 
   async function scheduleTarget(type, id) {
     const key = `${type}:${id}`;
-    const date = planDates[key];
-    if (!date) {
-      showToast("请选择计划日期");
-      return;
-    }
+    const date = planDates[key] || today();
 
     const alreadyScheduled = state.plans.some(
       (plan) =>
@@ -361,19 +401,38 @@ export default function App() {
   async function clearLocalData() {
     imageBackfillIds.current.clear();
     setTab("inbox");
-    setViewMode("grid");
     setQuery("");
     setSelectedTags([]);
     setAddedByFilter("all");
     setSelectedPlanDate("");
     setUndo(null);
     setPendingQuickSave(false);
+    setWeiboFallback(null);
     setQuickDraft(createEmptyQuickSaveDraft());
     setOpenPanels([]);
     setPlanDates({});
     setVisitDates({});
     setRescheduleDates({});
     await persist(createInitialState(), "本地数据已清空");
+  }
+
+  function exportLocalData() {
+    try {
+      const backup = createStateBackup(state);
+      const blobUrl = URL.createObjectURL(
+        new Blob([backup.content], { type: "application/json;charset=utf-8" })
+      );
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = backup.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+      showToast("本地数据备份已导出");
+    } catch (error) {
+      showToast(error.message || "导出失败");
+    }
   }
 
   if (!state) {
@@ -387,8 +446,6 @@ export default function App() {
 
   const screenProps = {
     state,
-    viewMode,
-    setViewMode,
     query,
     setQuery,
     selectedTags,
@@ -417,28 +474,13 @@ export default function App() {
     softDelete,
     mutate,
     showToast,
+    exportLocalData,
     clearLocalData
   };
 
   return (
     <div className="app-shell">
-      <header className="app-bar">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3" aria-label="种草软件">
-            <span className="brand-mark font-display text-2xl leading-none">种</span>
-            <div className="min-w-0">
-              <p className="mini-label">个人美食种草库</p>
-              <h1 className="font-display text-3xl leading-tight text-zinc-950">{TAB_LABELS[tab]}</h1>
-            </div>
-          </div>
-          <div className="stat-pill">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">待整理</span>
-            <strong className="font-display text-3xl leading-none text-emerald-950">{counts.pending}</strong>
-          </div>
-        </div>
-      </header>
-
-      <SummaryRail counts={counts} />
+      <TopBar tab={tab} counts={counts} onQuickAdd={() => setTab("inbox")} />
 
       <main className="grid gap-4 px-4 py-4">
         {tab === "inbox" && <InboxScreen {...screenProps} />}
@@ -449,29 +491,52 @@ export default function App() {
       </main>
 
       <BottomNav tab={tab} setTab={setTab} />
+      {weiboFallback && (
+        <WeiboFallbackDialog
+          pending={pendingQuickSave}
+          onClose={() => setWeiboFallback(null)}
+          onSave={savePendingWeiboLink}
+        />
+      )}
       {toast && <Toast message={toast} undo={undo} onUndo={undoLastAction} />}
     </div>
   );
 }
 
-function SummaryRail({ counts }) {
-  const items = [
-    ["待整理", counts.pending],
-    ["想去", counts.wishlist],
-    ["计划", counts.plans],
-    ["反馈", counts.visits]
-  ];
+function TopBar({ tab, counts, onQuickAdd }) {
+  const subtitle = topBarSubtitle(tab, counts);
 
   return (
-    <section className="grid grid-cols-4 gap-2.5 px-4 pt-3" aria-label="数据摘要">
-      {items.map(([label, value]) => (
-        <span key={label} className="summary-card">
-          <b className="font-display text-2xl leading-none text-emerald-950">{value}</b>
-          <small className="text-xs font-semibold text-zinc-500">{label}</small>
-        </span>
-      ))}
-    </section>
+    <header className="app-bar">
+      <div className="flex items-center gap-3">
+        <span className="brand-mark text-lg leading-none" aria-hidden="true">种</span>
+        <div className="min-w-0 flex-1">
+          <h1 className="font-display text-[26px] leading-none text-zinc-950">{TAB_LABELS[tab]}</h1>
+          <p className="mt-1 truncate text-sm font-medium text-zinc-500">{subtitle}</p>
+        </div>
+        <button className="icon-fab" type="button" aria-label="去收件箱保存新线索" title="保存新线索" onClick={onQuickAdd}>
+          <Plus size={22} strokeWidth={2.4} />
+        </button>
+      </div>
+    </header>
   );
+}
+
+function topBarSubtitle(tab, counts) {
+  switch (tab) {
+    case "inbox":
+      return counts.pending ? `${counts.pending} 条待整理` : "先收起来，之后再整理";
+    case "wishlist":
+      return `${counts.wishlist} 条灵感，等一次出发`;
+    case "calendar":
+      return counts.plans ? `${counts.plans} 个计划待赴约` : "给想去的地方安排日期";
+    case "visited":
+      return counts.visits ? `${counts.visits} 条到店反馈` : "到店后留一个轻反馈";
+    case "profile":
+      return "标签、备份与本地数据";
+    default:
+      return "";
+  }
 }
 
 function InboxScreen({
@@ -488,10 +553,9 @@ function InboxScreen({
   return (
     <>
       <section className="panel capture-panel">
-        <div className="grid gap-2">
-          <p className="mini-label text-emerald-800">收集入口</p>
-          <h2 className="font-display text-[2rem] leading-tight text-zinc-950">先收起来，之后再整理</h2>
-          <p className="max-w-prose text-base leading-relaxed text-zinc-600">
+        <div className="grid gap-1.5">
+          <h2 className="font-display text-2xl leading-tight text-zinc-950">先收起来，之后再整理</h2>
+          <p className="max-w-prose text-[15px] leading-relaxed text-zinc-600">
             分享文案、链接、店名都可以先放进来，之后按店铺或菜品慢慢归档。
           </p>
         </div>
@@ -545,7 +609,7 @@ function QuickSaveForm({ draft, setDraft, pending, onSubmit }) {
           name="fallbackTitle"
           autoComplete="off"
           value={draft.fallbackTitle}
-          placeholder="解析失败时必填，也可以提前写..."
+          placeholder="可选：解析不完整时可以补充..."
           onChange={(event) => setDraft({ ...draft, fallbackTitle: event.target.value })}
         />
       </Field>
@@ -567,7 +631,7 @@ function QuickSaveForm({ draft, setDraft, pending, onSubmit }) {
         />
       </Field>
       <button className="primary-button" type="submit" disabled={pending} aria-busy={pending}>
-        {pending ? "保存中..." : "保存到收件箱"}
+        {pending ? "保存中..." : "保存线索"}
       </button>
     </form>
   );
@@ -601,8 +665,12 @@ function InboxItem({ item, onOrganize, onReparse }) {
             {item.failureReason || "需要手动补充标题、店名或菜名"}
           </p>
         )}
+        {item.authorName && <p className="text-sm font-semibold text-zinc-600">作者：{item.authorName}</p>}
+        {item.sourceDescription && item.sourceDescription !== item.title && (
+          <p className="line-clamp-3 text-sm leading-relaxed text-zinc-600">{item.sourceDescription}</p>
+        )}
         <ContributorChip addedBy={item.addedBy} />
-        <p className="line-clamp-2 break-all text-sm font-semibold text-zinc-500">{item.normalizedUrl || item.sourceUrl}</p>
+        <SourceLinkButton source={item} label={item.platform} />
         <form ref={formRef} className="grid gap-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="店铺"><input name="storeName" defaultValue={suggestion.storeName || item.title} /></Field>
@@ -615,10 +683,10 @@ function InboxItem({ item, onOrganize, onReparse }) {
           <Field label="整理备注"><textarea name="note" rows={2} defaultValue={suggestedNote} /></Field>
           <div className="flex flex-wrap gap-2">
             {[
-              ["store", "保存为店铺"],
-              ["dish", "保存为菜品"],
+              ["store", "整理为店铺"],
+              ["dish", "整理为菜品"],
               ["store-dish", "店铺 + 菜品"],
-              ["hold", "暂留"]
+              ["hold", "暂留一下"]
             ].map(([template, label]) => (
               <button key={template} className="secondary-button flex-1 basis-28" type="button" onClick={() => onOrganize(item.id, template, valuesFromForm())}>
                 {label}
@@ -632,183 +700,330 @@ function InboxItem({ item, onOrganize, onReparse }) {
 }
 
 function WishlistScreen(props) {
-  const { state, viewMode, setViewMode, query, selectedTags, addedByFilter } = props;
+  const { state, query, setQuery, selectedTags, setSelectedTags, addedByFilter, setAddedByFilter } = props;
+  const [sortBy, setSortBy] = useState("updatedAt");
+
   const searched = searchCollections(state, query);
-  const stores = filterByAddedBy(filterByTags(searched.stores, selectedTags), addedByFilter)
-    .filter((store) => ["want", "planned"].includes(store.status));
-  const dishes = filterByAddedBy(filterByTags(searched.dishes, selectedTags), addedByFilter)
-    .filter((dish) => ["want", "planned"].includes(dish.status));
-  const items = [...stores.map((item) => ({ type: "store", item })), ...dishes.map((item) => ({ type: "dish", item }))];
+  const tagStores = filterByTags(searched.stores, selectedTags)
+    .filter((store) => ["want", "planned"].includes(store.status))
+    .map((item) => ({ type: "store", item }));
+  const tagDishes = filterByTags(searched.dishes, selectedTags)
+    .filter((dish) => ["want", "planned"].includes(dish.status))
+    .map((item) => ({ type: "dish", item }));
+  const base = [...tagStores, ...tagDishes];
+
+  const filterCounts = {
+    all: base.length,
+    xiaowang: base.filter((entry) => entry.item.addedBy === "xiaowang").length,
+    xiaozhang: base.filter((entry) => entry.item.addedBy === "xiaozhang").length
+  };
+  const tagChips = topTagNames(base, 4);
+
+  const items = base
+    .filter((entry) => addedByFilter === "all" || entry.item.addedBy === addedByFilter)
+    .sort((a, b) => sortValue(b.item, sortBy).localeCompare(sortValue(a.item, sortBy)));
+
+  const featured = items[0];
+  const rest = items.slice(1);
 
   return (
     <>
-      <Filters {...props} />
-      <SegmentedControl
-        ariaLabel="视图模式"
-        className="hidden sm:grid"
-        value={viewMode}
-        options={[{ value: "grid", label: "图列" }, { value: "list", label: "列表" }]}
-        onChange={setViewMode}
+      <SearchField value={query} onChange={setQuery} />
+      <ChipFilters
+        addedByFilter={addedByFilter}
+        setAddedByFilter={setAddedByFilter}
+        selectedTags={selectedTags}
+        setSelectedTags={setSelectedTags}
+        counts={filterCounts}
+        tagChips={tagChips}
       />
-      <SectionHead title="近期想去" description="按标签、商圈、时间段筛出当下合适的选择。" count={`${items.length} 个`} />
-      <div className={viewMode === "grid" ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"}>
-        {items.length ? items.map(({ type, item }) => <WishCard key={`${type}:${item.id}`} type={type} item={item} {...props} />) : <EmptyState>先去收件箱整理一条线索</EmptyState>}
-      </div>
+
+      {featured ? (
+        <FeatureCard type={featured.type} item={featured.item} {...props} />
+      ) : (
+        <EmptyState>先去收件箱整理一条线索，就会出现在这里</EmptyState>
+      )}
+
+      {featured && (
+        <>
+          <div className="flex items-center justify-between gap-3 px-1 pt-1">
+            <h2 className="font-display text-xl text-zinc-950">最近收藏</h2>
+            <button
+              className="sort-chip"
+              type="button"
+              onClick={() => setSortBy(sortBy === "updatedAt" ? "createdAt" : "updatedAt")}
+            >
+              <ArrowUpDown size={15} strokeWidth={2.2} />
+              {sortBy === "updatedAt" ? "更新时间" : "收藏时间"}
+            </button>
+          </div>
+          <div className="grid gap-3">
+            {rest.length ? (
+              rest.map(({ type, item }) => (
+                <PlaceCard key={`${type}:${item.id}`} type={type} item={item} {...props} />
+              ))
+            ) : (
+              <p className="mini-label px-1">没有更多收藏了</p>
+            )}
+          </div>
+        </>
+      )}
     </>
   );
 }
 
-function Filters({ state, query, setQuery, selectedTags, setSelectedTags, addedByFilter, setAddedByFilter }) {
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [tagFilterQuery, setTagFilterQuery] = useState("");
-  const normalizedTagQuery = tagFilterQuery.trim().toLowerCase();
-  const filteredTagGroups = Object.entries(groupTags(state.tags))
-    .map(([group, tags]) => [
-      group,
-      tags.filter((tag) => tag.name.toLowerCase().includes(normalizedTagQuery))
-    ])
-    .filter(([, tags]) => tags.length);
+function SearchField({ value, onChange }) {
+  return (
+    <div className="search-field">
+      <label className="sr-only" htmlFor="wishlist-search">搜索店名、菜名或商圈</label>
+      <Search className="search-icon" size={20} strokeWidth={2.2} />
+      <input
+        id="wishlist-search"
+        value={value}
+        autoComplete="off"
+        placeholder="搜店名、菜名或商圈"
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+}
 
+function ChipFilters({ addedByFilter, setAddedByFilter, selectedTags, setSelectedTags, counts, tagChips }) {
   function toggleTag(tag) {
     setSelectedTags(selectedTags.includes(tag) ? selectedTags.filter((item) => item !== tag) : [...selectedTags, tag]);
   }
 
-  function clearFilters() {
-    setQuery("");
-    setSelectedTags([]);
-    setAddedByFilter("all");
-    setTagFilterQuery("");
-  }
-
   return (
-    <section className="panel">
-      <label className="sr-only" htmlFor="wishlist-search">搜索店名、菜名、商圈、备注、标签</label>
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={19} />
-        <input id="wishlist-search" className="pl-10" value={query} autoComplete="off" placeholder="搜索店名、菜名、商圈、备注、标签..." onChange={(event) => setQuery(event.target.value)} />
-      </div>
-      <div className="grid gap-3 rounded-lg border border-zinc-200 bg-zinc-50/70 p-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="mini-label">标签筛选</p>
-            <p className="truncate text-sm font-semibold text-zinc-500">
-              {selectedTags.length ? selectedTags.join("、") : "未选择标签"}
-            </p>
-            <p className="text-sm font-semibold text-zinc-500">添加人：{addedByFilterLabel(addedByFilter)}</p>
-          </div>
-          <button
-            className="secondary-button inline-flex shrink-0 items-center gap-2"
-            type="button"
-            aria-expanded={filtersOpen}
-            onClick={() => setFiltersOpen(!filtersOpen)}
-          >
-            <SlidersHorizontal size={17} />
-            筛选
-          </button>
-        </div>
-        {selectedTags.length ? (
-          <div className="flex flex-wrap gap-2">
-            {selectedTags.map((tag) => (
-              <button key={tag} className="chip-selected" type="button" onClick={() => toggleTag(tag)}>
-                {tag}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        {filtersOpen ? (
-          <div className="grid gap-3 border-t border-zinc-200 pt-3">
-            <div className="grid gap-2">
-              <p className="mini-label">添加人</p>
-              <div className="grid grid-cols-4 gap-2">
-                {ADDED_BY_FILTER_OPTIONS.map((option) => (
-                  <button
-                    key={option}
-                    className={addedByFilter === option ? "toggle-active" : "toggle-button"}
-                    type="button"
-                    aria-pressed={addedByFilter === option}
-                    onClick={() => setAddedByFilter(option)}
-                  >
-                    {addedByFilterLabel(option)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <label className="sr-only" htmlFor="tag-filter-search">搜索标签</label>
-            <input
-              id="tag-filter-search"
-              value={tagFilterQuery}
-              autoComplete="off"
-              placeholder="搜索标签..."
-              onChange={(event) => setTagFilterQuery(event.target.value)}
-            />
-            <div className="grid max-h-72 gap-3 overflow-y-auto pr-1">
-              {filteredTagGroups.length ? filteredTagGroups.map(([group, tags]) => (
-                <div key={group} className="grid gap-2">
-                  <p className="mini-label">{tagGroupLabel(group)}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {tags.map((tag) => (
-                      <button key={tag.id} className={selectedTags.includes(tag.name) ? "chip-selected" : "chip"} type="button" onClick={() => toggleTag(tag.name)}>
-                        {tag.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )) : <p className="mini-label">没有匹配标签</p>}
-            </div>
-          </div>
-        ) : null}
-      </div>
-      <button className="text-button" type="button" onClick={clearFilters}>清空筛选</button>
-    </section>
+    <div className="chip-row" aria-label="快速筛选">
+      <FilterChip active={addedByFilter === "all"} onClick={() => setAddedByFilter("all")}>
+        全部<span className="chip-count">{counts.all}</span>
+      </FilterChip>
+      <FilterChip active={addedByFilter === "xiaowang"} onClick={() => setAddedByFilter("xiaowang")}>
+        小王<span className="chip-count">{counts.xiaowang}</span>
+      </FilterChip>
+      <FilterChip active={addedByFilter === "xiaozhang"} onClick={() => setAddedByFilter("xiaozhang")}>
+        小张<span className="chip-count">{counts.xiaozhang}</span>
+      </FilterChip>
+      {tagChips.map((tag) => (
+        <FilterChip key={tag} active={selectedTags.includes(tag)} onClick={() => toggleTag(tag)}>
+          {tag}
+        </FilterChip>
+      ))}
+    </div>
   );
 }
 
-function WishCard(props) {
-  const { state, type, item, planDates, setPlanDates, visitDates, setVisitDates, scheduleTarget, visitTarget, softDelete } = props;
-  const key = `${type}:${item.id}`;
-  const meta =
-    type === "store"
-      ? [item.city, item.businessDistrict, STATUS_LABELS[item.status]].filter(Boolean).join(" · ")
-      : [findStoreName(state, item.storeId), STATUS_LABELS[item.status]].filter(Boolean).join(" · ");
+function FilterChip({ active, onClick, children }) {
+  return (
+    <button
+      type="button"
+      className={active ? "filter-chip filter-chip-active" : "filter-chip"}
+      aria-pressed={active}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function StatusButton({ className, idleLabel, pendingLabel, successLabel, onRun }) {
+  const [status, setStatus] = useState("idle");
+  const timer = useRef(0);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  async function handleClick() {
+    if (status !== "idle") return;
+    setStatus("pending");
+    try {
+      await onRun();
+      setStatus("success");
+      timer.current = window.setTimeout(() => setStatus("idle"), 1100);
+    } catch {
+      setStatus("idle");
+    }
+  }
 
   return (
-    <article className="wish-card item-card grid grid-cols-[86px_minmax(0,1fr)] items-start sm:grid-cols-[108px_minmax(0,1fr)]">
-      <Cover url={item.coverImageUrl} label={type === "store" ? "店铺" : "菜品"} compact />
-      <div className="grid min-w-0 gap-2 p-3 sm:gap-3 sm:p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <span className="mini-label">{type === "store" ? "店铺" : "菜品"}</span>
-            <h3 className="break-words font-display text-lg leading-snug text-zinc-950 sm:text-xl">{item.name}</h3>
-            <p className="break-words text-sm font-semibold text-zinc-500">{meta}</p>
-            <div className="pt-2"><ContributorChip addedBy={item.addedBy} /></div>
-          </div>
-          <IconButton label="移入回收站" onClick={() => softDelete(type === "store" ? "stores" : "dishes", item.id)}>
-            <Trash2 size={18} />
-          </IconButton>
+    <button
+      className={className}
+      type="button"
+      onClick={handleClick}
+      disabled={status !== "idle"}
+      aria-busy={status === "pending"}
+    >
+      {status === "pending" && <Loader2 className="btn-spinner" size={17} aria-hidden="true" />}
+      {status === "success" && <Check size={17} strokeWidth={2.6} aria-hidden="true" />}
+      <span>{status === "pending" ? pendingLabel : status === "success" ? successLabel : idleLabel}</span>
+    </button>
+  );
+}
+
+function FeatureCard(props) {
+  const { state, type, item, planDates, setPlanDates, scheduleTarget } = props;
+  const [open, setOpen] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
+  const key = `${type}:${item.id}`;
+  const location = itemLocation(state, type, item);
+  const featureTag = item.featureTag || item.tagNames?.[0] || "最近收藏";
+  const metaTag = (item.tagNames || []).find((tag) => tag !== featureTag) || "";
+  const meta = [location, item.category, metaTag].filter(Boolean).join(" · ");
+
+  return (
+    <div className="grid gap-2">
+      <article className="feature-card">
+        <div className={`feature-cover feature-cover-${foodMeta(item).key}`}>
+          {item.coverImageUrl && !imageFailed ? (
+            <img
+              src={item.coverImageUrl}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              referrerPolicy="no-referrer"
+              onError={() => setImageFailed(true)}
+            />
+          ) : (
+            <span className="feature-glyph" aria-hidden="true">{foodGlyph(item)}</span>
+          )}
+          <span className="feature-tag">{featureTag}</span>
+          <span className="feature-contributor">{addedByLabel(item.addedBy)}添加</span>
         </div>
-        <Tags tags={item.tagNames} />
-        {type === "store" && item.sourceLinks?.length ? <p className="mini-label">来源 {item.sourceLinks.length} 条</p> : null}
-      </div>
-      <div className="wish-card-actions col-span-2 grid gap-0 px-3 pb-3 sm:px-4 sm:pb-4">
-        <EditForm type={type} item={item} {...props} />
-        <DetailsPanel id={`plan:${key}`} title="加入日历" {...props}>
+        <div className="feature-body">
+          <div className="min-w-0">
+            <h2 className="font-display text-2xl leading-tight text-white">{item.name}</h2>
+            <p className="mt-1.5 truncate text-sm font-medium text-white/60">{meta || (type === "store" ? "店铺" : "菜品")}</p>
+          </div>
+          <button className="feature-cta" type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
+            安排日期
+          </button>
+        </div>
+      </article>
+      {open && (
+        <div className="item-card card-drawer p-4">
           <div className="action-panel border-t-0 pt-0">
             <Field label="计划日期">
-              <input type="date" value={planDates[key] || today()} onChange={(event) => setPlanDates({ ...planDates, [key]: event.target.value })} />
+              <input
+                type="date"
+                value={planDates[key] || today()}
+                onChange={(event) => setPlanDates({ ...planDates, [key]: event.target.value })}
+              />
             </Field>
-            <button className="secondary-button" type="button" onClick={() => scheduleTarget(type, item.id)}>加入日历</button>
+            <StatusButton
+              className="primary-button"
+              idleLabel="加入日历"
+              pendingLabel="安排中…"
+              successLabel="已加入日历"
+              onRun={() => scheduleTarget(type, item.id)}
+            />
           </div>
-        </DetailsPanel>
-        <DetailsPanel id={`feedback:${key}`} title="到店轻反馈" {...props}>
-          <div className="action-panel border-t-0 pt-0">
-            <Field label="到店日期">
-              <input type="date" value={visitDates[key] || today()} onChange={(event) => setVisitDates({ ...visitDates, [key]: event.target.value })} />
-            </Field>
-            <FeedbackButtons onPick={(feedback) => visitTarget(type, item.id, feedback)} />
-          </div>
-        </DetailsPanel>
-      </div>
-    </article>
+          <CardExtras {...props} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlaceCard(props) {
+  const { state, type, item } = props;
+  const [open, setOpen] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
+  const location = itemLocation(state, type, item);
+  const meta = [location, type === "store" ? "店铺" : "菜品", `${addedByLabel(item.addedBy)}添加`]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <div className="grid gap-2">
+      <button className="place-card text-left" type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className={`place-thumb place-thumb-${foodMeta(item).key}`}>
+          {item.coverImageUrl && !imageFailed ? (
+            <img
+              src={item.coverImageUrl}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              referrerPolicy="no-referrer"
+              onError={() => setImageFailed(true)}
+            />
+          ) : (
+            <span className="glyph" aria-hidden="true">{foodGlyph(item)}</span>
+          )}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate font-display text-[17px] text-zinc-950">{item.name}</span>
+          <span className="mt-0.5 block truncate text-[13px] font-medium text-zinc-500">{meta}</span>
+          {item.tagNames?.length ? (
+            <span className="mt-2 flex flex-wrap gap-2">
+              {item.tagNames.slice(0, 2).map((tag) => (
+                <span key={tag} className="chip-passive">{tag}</span>
+              ))}
+              {item.tagNames.length > 2 ? <span className="chip-overflow">+{item.tagNames.length - 2}</span> : null}
+            </span>
+          ) : null}
+        </span>
+        <span className="place-chevron" aria-hidden="true">
+          <ChevronRight size={20} strokeWidth={2.2} />
+        </span>
+      </button>
+      {open && (
+        <div className="item-card card-drawer p-4">
+          <PlanRow {...props} />
+          <CardExtras {...props} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlanRow({ type, item, planDates, setPlanDates, scheduleTarget }) {
+  const key = `${type}:${item.id}`;
+  return (
+    <div className="action-panel border-t-0 pt-0">
+      <Field label="计划日期">
+        <input
+          type="date"
+          value={planDates[key] || today()}
+          onChange={(event) => setPlanDates({ ...planDates, [key]: event.target.value })}
+        />
+      </Field>
+      <StatusButton
+        className="primary-button"
+        idleLabel="安排日期"
+        pendingLabel="安排中…"
+        successLabel="已加入日历"
+        onRun={() => scheduleTarget(type, item.id)}
+      />
+    </div>
+  );
+}
+
+function CardExtras(props) {
+  const { type, item, visitDates, setVisitDates, visitTarget, softDelete } = props;
+  const key = `${type}:${item.id}`;
+
+  return (
+    <>
+      <SourceLinksPanel links={item.sourceLinks || []} />
+      <DetailsPanel id={`feedback:${key}`} title="到店轻反馈" {...props}>
+        <div className="action-panel border-t-0 pt-0">
+          <Field label="到店日期">
+            <input
+              type="date"
+              value={visitDates[key] || today()}
+              onChange={(event) => setVisitDates({ ...visitDates, [key]: event.target.value })}
+            />
+          </Field>
+          <FeedbackButtons onPick={(feedback) => visitTarget(type, item.id, feedback)} />
+        </div>
+      </DetailsPanel>
+      <EditForm type={type} item={item} {...props} />
+      <button
+        className="text-button"
+        type="button"
+        onClick={() => softDelete(type === "store" ? "stores" : "dishes", item.id)}
+      >
+        移入回收站
+      </button>
+    </>
   );
 }
 
@@ -1043,7 +1258,7 @@ function VisitCard({ state, visit, softDelete }) {
       <div className="grid min-w-0 gap-3 p-4">
         <h3 className="break-words font-display text-xl text-zinc-950">{target?.name || "已删除项目"}</h3>
         <div className="flex items-center justify-between gap-3">
-          <p className="feedback-badge">{FEEDBACK_LABELS[visit.feedback]}</p>
+          <FeedbackPill feedback={visit.feedback} />
           <IconButton label="撤销轻反馈" onClick={() => softDelete("visitRecords", visit.id)}>
             <Trash2 size={18} />
           </IconButton>
@@ -1054,7 +1269,7 @@ function VisitCard({ state, visit, softDelete }) {
   );
 }
 
-function ProfileScreen({ state, mutate, clearLocalData }) {
+function ProfileScreen({ state, mutate, exportLocalData, clearLocalData }) {
   const trash = getTrashItems(state);
   const trashCount = Object.values(trash).reduce((sum, items) => sum + items.length, 0);
   const groups = groupTags(state.tags);
@@ -1128,10 +1343,16 @@ function ProfileScreen({ state, mutate, clearLocalData }) {
 
       <section className="panel">
         <h2 className="font-display text-2xl text-zinc-950">本地数据</h2>
-        <p className="text-base font-semibold text-zinc-600">数据版本：v{state.meta.dataVersion}</p>
-        <p className="text-base font-semibold text-zinc-600">当前支持固定添加人：小王 / 小张；历史数据会显示为未标记。</p>
-        <p className="text-base font-semibold text-zinc-600">收藏数据保存在当前浏览器的 IndexedDB 中。导出/导入会在下一版加入。</p>
-        <button className="text-button" type="button" onClick={clearLocalData}>清空本地数据</button>
+        <p className="text-[15px] font-medium text-zinc-600">数据版本：v{state.meta.dataVersion}</p>
+        <p className="text-[15px] font-medium text-zinc-600">当前支持固定添加人：小王 / 小张；历史数据会显示为未标记。</p>
+        <p className="text-[15px] font-medium text-zinc-600">收藏数据保存在当前浏览器的 IndexedDB 中，可先导出 JSON 备份供后续迁移。</p>
+        <button className="secondary-button w-fit" type="button" onClick={exportLocalData}>导出 JSON 备份</button>
+      </section>
+
+      <section className="panel danger-zone">
+        <h2 className="font-display text-2xl text-zinc-950">危险操作</h2>
+        <p className="text-[15px] font-medium text-zinc-600">清空后只能靠已导出的 JSON 备份恢复，操作前请先导出。</p>
+        <button className="danger-button" type="button" onClick={clearLocalData}>清空本地数据</button>
       </section>
     </>
   );
@@ -1168,9 +1389,13 @@ function TrashGroup({ label, collection, items, onRestore }) {
 }
 
 function BottomNav({ tab, setTab }) {
+  const ids = Object.keys(TAB_LABELS);
+  const activeIndex = Math.max(0, ids.indexOf(tab));
+
   return (
     <nav className="bottom-nav" aria-label="主导航">
-      {Object.entries(TAB_LABELS).map(([id, label]) => {
+      <span className="nav-indicator" aria-hidden="true" style={{ "--nav-index": activeIndex }} />
+      {ids.map((id) => {
         const Icon = TAB_ICONS[id];
         const active = id === tab;
         return (
@@ -1182,7 +1407,7 @@ function BottomNav({ tab, setTab }) {
             onClick={() => setTab(id)}
           >
             <Icon size={21} strokeWidth={active ? 2.4 : 2} />
-            <span className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
+            <span className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{TAB_LABELS[id]}</span>
           </button>
         );
       })}
@@ -1270,6 +1495,72 @@ function ContributorChip({ addedBy }) {
   return <span className="added-by-chip">添加人：{addedByLabel(addedBy)}</span>;
 }
 
+function SourceLinkButton({ source, label = "来源" }) {
+  const href = sourceHref(source);
+  if (!href) return null;
+
+  return (
+    <a
+      className="secondary-button w-fit max-w-full"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      打开{label === "未知平台" ? "原" : label}内容
+    </a>
+  );
+}
+
+function SourceLinksPanel({ links }) {
+  const visibleLinks = uniqueSourceLinks(links);
+  if (!visibleLinks.length) return null;
+
+  return (
+    <div className="action-panel border-t-0 pt-0">
+      <p className="mini-label">来源链接（{visibleLinks.length}）</p>
+      <div className="flex flex-wrap gap-2">
+        {visibleLinks.map((link) => (
+          <SourceLinkButton key={link.id || sourceHref(link)} source={link} label={link.platform || "来源"} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WeiboFallbackDialog({ pending, onClose, onSave }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/55 p-4" role="presentation">
+      <section
+        className="panel w-full max-w-md"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="weibo-fallback-title"
+      >
+        <h2 id="weibo-fallback-title" className="font-display text-2xl text-zinc-950">微博链接暂不支持自动解析</h2>
+        <p className="text-[15px] leading-relaxed text-zinc-600">
+          建议手动打开大众点评，搜索对应店铺后，再复制完整的大众点评分享内容。这里不会尝试从微信直接唤起大众点评。
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button className="primary-button" type="button" onClick={onClose} disabled={pending}>我去大众点评搜索</button>
+          <button className="secondary-button" type="button" onClick={onSave} disabled={pending}>
+            {pending ? "保存中..." : "先保存微博链接"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function FeedbackPill({ feedback }) {
+  const { cls, Icon } = FEEDBACK_PILL[feedback] || FEEDBACK_PILL.ok;
+  return (
+    <span className={cls}>
+      <Icon size={14} strokeWidth={2.4} aria-hidden="true" />
+      {FEEDBACK_LABELS[feedback]}
+    </span>
+  );
+}
+
 function IconButton({ label, onClick, children }) {
   return (
     <button className="grid h-11 min-h-11 w-11 shrink-0 place-items-center rounded-xl border border-zinc-200 bg-white text-zinc-600 transition-colors duration-200 hover:border-emerald-950/30 hover:bg-emerald-50 hover:text-emerald-900" type="button" aria-label={label} title={label} onClick={onClick}>
@@ -1293,18 +1584,6 @@ function Cover({ url, label, compact = false }) {
   return (
     <div className={`cover grid place-items-center ${compact ? "h-full min-h-28" : "min-h-32"}`}>
       <span className="brand-mark relative z-10 h-14 w-14 rounded-2xl font-display text-2xl">{initial}</span>
-    </div>
-  );
-}
-
-function Tags({ tags = [] }) {
-  if (!tags.length) return null;
-  const visibleTags = tags.slice(0, 3);
-  const hiddenCount = tags.length - visibleTags.length;
-  return (
-    <div className="flex flex-wrap gap-2">
-      {visibleTags.map((tag) => <span key={tag} className="chip-passive">{tag}</span>)}
-      {hiddenCount > 0 ? <span className="chip-overflow" aria-label={`还有 ${hiddenCount} 个标签`}>+{hiddenCount}</span> : null}
     </div>
   );
 }
@@ -1343,9 +1622,71 @@ function findTarget(state, type, id) {
   return target && !target.deletedAt ? target : null;
 }
 
-function findStoreName(state, id) {
-  if (!id) return "待补店铺";
-  return activeItems(state.stores).find((store) => store.id === id)?.name || "待补店铺";
+function sourceHref(source) {
+  const value = String(
+    source?.resolvedUrl || source?.normalizedUrl || source?.sharedUrl || ""
+  ).trim();
+  return /^https?:\/\//i.test(value) ? value : "";
+}
+
+function uniqueSourceLinks(links) {
+  const seen = new Set();
+  return (Array.isArray(links) ? links : []).filter((link) => {
+    const href = sourceHref(link);
+    if (!href || seen.has(href)) return false;
+    seen.add(href);
+    return true;
+  });
+}
+
+function itemLocation(state, type, item) {
+  if (type === "store") return item.businessDistrict || item.city || "";
+  const store = item.storeId ? activeItems(state.stores).find((candidate) => candidate.id === item.storeId) : null;
+  return store?.businessDistrict || store?.city || "";
+}
+
+function sortValue(item, key) {
+  return item[key] || item.updatedAt || item.createdAt || "";
+}
+
+function topTagNames(entries, limit) {
+  const freq = new Map();
+  for (const { item } of entries) {
+    for (const tag of item.tagNames || []) {
+      freq.set(tag, (freq.get(tag) || 0) + 1);
+    }
+  }
+  return [...freq.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([name]) => name);
+}
+
+const FOOD_CATEGORIES = [
+  { re: /面|云吞|馄饨|粉|米线/, glyph: "🍜", key: "noodle" },
+  { re: /串|烧鸟|烧烤|烤/, glyph: "🍢", key: "skewer" },
+  { re: /火锅|锅底|涮/, glyph: "🍲", key: "hotpot" },
+  { re: /咖啡|拿铁|美式/, glyph: "☕️", key: "coffee" },
+  { re: /糖水|甜|蛋糕|布丁|杨枝/, glyph: "🍮", key: "dessert" },
+  { re: /烘焙|可颂|面包|吐司|贝果/, glyph: "🥐", key: "bakery" },
+  { re: /日料|刺身|寿司|三文鱼|河豚|居酒屋/, glyph: "🍣", key: "sushi" },
+  { re: /龙虾|虾/, glyph: "🦐", key: "seafood" },
+  { re: /泰|冬阴功|咖喱/, glyph: "🍛", key: "curry" },
+  { re: /茶/, glyph: "🍵", key: "tea" },
+  { re: /酒/, glyph: "🍶", key: "izakaya" },
+  { re: /西餐|牛排|意面/, glyph: "🍽️", key: "western" },
+  { re: /肉/, glyph: "🍖", key: "meat" }
+];
+
+const DEFAULT_FOOD_CATEGORY = { glyph: "🍽️", key: "default" };
+
+function foodMeta(item) {
+  const hay = `${item.category || ""} ${item.name || ""} ${(item.tagNames || []).join(" ")}`;
+  return FOOD_CATEGORIES.find((category) => category.re.test(hay)) || DEFAULT_FOOD_CATEGORY;
+}
+
+function foodGlyph(item) {
+  return foodMeta(item).glyph;
 }
 
 function groupTags(tags) {
@@ -1358,10 +1699,6 @@ function groupTags(tags) {
 
 function addedByLabel(value) {
   return ADDED_BY_LABELS[coerceAddedByForUi(value)];
-}
-
-function addedByFilterLabel(value) {
-  return value === "all" ? "全部" : addedByLabel(value);
 }
 
 function coerceAddedByForUi(value) {

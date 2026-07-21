@@ -5,6 +5,8 @@ const DB_VERSION = 1;
 const STORE_NAME = "kv";
 const STATE_KEY = "app-state";
 const LOCAL_STORAGE_KEY = "zhongcao-app-state";
+const BACKUP_FORMAT = "zhongcao-state-backup";
+const BACKUP_VERSION = 1;
 
 export async function loadState() {
   const stored = await readState();
@@ -15,6 +17,27 @@ export async function saveState(state) {
   const migrated = migrateState(state);
   await writeState(migrated);
   return migrated;
+}
+
+export function createStateBackup(state, exportedAt = new Date()) {
+  const timestamp = exportedAt instanceof Date ? exportedAt : new Date(exportedAt);
+  if (Number.isNaN(timestamp.getTime())) {
+    throw new Error("备份时间无效");
+  }
+
+  const migrated = migrateState(structuredClone(state));
+  const payload = {
+    format: BACKUP_FORMAT,
+    backupVersion: BACKUP_VERSION,
+    exportedAt: timestamp.toISOString(),
+    dataVersion: DATA_VERSION,
+    state: migrated
+  };
+
+  return {
+    filename: `zhongcao-backup-${timestamp.toISOString().slice(0, 10)}.json`,
+    content: JSON.stringify(payload, null, 2)
+  };
 }
 
 export function migrateState(rawState) {
@@ -42,6 +65,7 @@ export function migrateState(rawState) {
   }
 
   migrateAddedByFields(state);
+  migrateSourceFields(state);
 
   return state;
 }
@@ -63,6 +87,51 @@ function migrateAddedByFields(state) {
   for (const dish of state.dishes) {
     dish.addedBy = coerceStoredAddedBy(dish.addedBy);
   }
+}
+
+function migrateSourceFields(state) {
+  for (const item of state.inboxItems) {
+    const rawShareText = String(item.rawShareText || item.sourceUrl || "").trim();
+    const sharedUrl = String(item.sharedUrl || item.normalizedUrl || "").trim();
+    const resolvedUrl = String(item.resolvedUrl || item.normalizedUrl || sharedUrl).trim();
+    item.rawShareText = rawShareText;
+    item.sourceUrl = rawShareText || sharedUrl;
+    item.sharedUrl = sharedUrl || resolvedUrl;
+    item.resolvedUrl = resolvedUrl || sharedUrl;
+    item.normalizedUrl = item.resolvedUrl || item.sharedUrl;
+    item.sourceKey = String(item.sourceKey || "").trim();
+    item.sourceDescription = String(item.sourceDescription || "").trim();
+    item.authorName = String(item.authorName || "").trim();
+    item.hashtags = normalizeStoredStrings(item.hashtags);
+    item.failureCode = String(item.failureCode || "").trim();
+  }
+
+  for (const entity of [...state.stores, ...state.dishes]) {
+    entity.sourceLinks = Array.isArray(entity.sourceLinks) ? entity.sourceLinks : [];
+    for (const link of entity.sourceLinks) migrateStoredSourceLink(link);
+  }
+}
+
+function migrateStoredSourceLink(link) {
+  const rawShareText = String(link.rawShareText || link.originalUrl || "").trim();
+  const sharedUrl = String(link.sharedUrl || link.normalizedUrl || "").trim();
+  const resolvedUrl = String(link.resolvedUrl || link.normalizedUrl || sharedUrl).trim();
+  link.rawShareText = rawShareText;
+  link.originalUrl = rawShareText || sharedUrl;
+  link.sharedUrl = sharedUrl || resolvedUrl;
+  link.resolvedUrl = resolvedUrl || sharedUrl;
+  link.normalizedUrl = link.resolvedUrl || link.sharedUrl;
+  link.sourceKey = String(link.sourceKey || "").trim();
+  link.sourceDescription = String(link.sourceDescription || "").trim();
+  link.authorName = String(link.authorName || "").trim();
+  link.hashtags = normalizeStoredStrings(link.hashtags);
+  link.failureCode = String(link.failureCode || "").trim();
+}
+
+function normalizeStoredStrings(values) {
+  return Array.isArray(values)
+    ? [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))]
+    : [];
 }
 
 function coerceStoredAddedBy(value, fallback = "unknown") {

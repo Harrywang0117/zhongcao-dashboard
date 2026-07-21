@@ -2,7 +2,28 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { DATA_VERSION } from "../src/lib/domain.js";
-import { migrateState } from "../src/lib/storage.js";
+import { createStateBackup, migrateState } from "../src/lib/storage.js";
+
+test("creates a versioned JSON backup for later server migration", () => {
+  const state = migrateState({
+    inboxItems: [{ id: "inbox_1", title: "老城火锅", addedBy: "xiaowang" }],
+    stores: [],
+    dishes: [],
+    plans: [],
+    visitRecords: [],
+    tags: []
+  });
+
+  const backup = createStateBackup(state, new Date("2026-06-23T12:34:56.000Z"));
+  const payload = JSON.parse(backup.content);
+
+  assert.equal(backup.filename, "zhongcao-backup-2026-06-23.json");
+  assert.equal(payload.format, "zhongcao-state-backup");
+  assert.equal(payload.backupVersion, 1);
+  assert.equal(payload.exportedAt, "2026-06-23T12:34:56.000Z");
+  assert.equal(payload.dataVersion, DATA_VERSION);
+  assert.equal(payload.state.inboxItems[0].id, "inbox_1");
+});
 
 test("migrates missing added by fields without dropping existing data", () => {
   const rawState = {
@@ -86,10 +107,13 @@ test("migrates missing added by fields without dropping existing data", () => {
   assert.equal(state.inboxItems[0].addedBy, "unknown");
   assert.equal(state.stores[0].addedBy, "unknown");
   assert.equal(state.stores[0].sourceLinks[0].addedBy, "unknown");
+  assert.equal(state.stores[0].sourceLinks[0].sharedUrl, "https://example.com/a");
+  assert.equal(state.stores[0].sourceLinks[0].resolvedUrl, "https://example.com/a");
   assert.equal(state.stores[1].addedBy, "xiaozhang");
   assert.equal(state.stores[1].sourceLinks[0].addedBy, "xiaozhang");
   assert.equal(state.stores[1].sourceLinks[1].addedBy, "xiaowang");
   assert.equal(state.dishes[0].addedBy, "unknown");
+  assert.deepEqual(state.dishes[0].sourceLinks, []);
   assert.equal(state.plans.length, 1);
   assert.equal(state.visitRecords.length, 1);
   assert.ok(state.tags.some((tag) => tag.name === "朋友局"));

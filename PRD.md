@@ -54,7 +54,7 @@ v1 使用 5 个底部导航入口：
 ### User Stories
 
 - As a user, I want to paste a link quickly so that I can save a food recommendation before I forget it.
-- As a user, I want failed or low-information links to still be saveable with a title, shop name, or dish name so that my inbox does not become useless URLs.
+- As a user, I want failed or low-information links to remain saveable and reopenable, with optional manual titles, so that useful source links are not lost.
 - As a user, I want to organize clues into stores and dishes so that I can browse by where to go or what to eat.
 - As a user, I want tags, search, business district, and time-period filters so that I can quickly decide what fits the current situation.
 - As a user, I want to schedule stores or dishes on a date so that recommendations can become real plans.
@@ -65,7 +65,8 @@ v1 使用 5 个底部导航入口：
 ### Acceptance Criteria
 
 - 收件箱支持粘贴链接、解析状态展示、解析失败兜底、重新解析、快速整理。
-- 如果链接解析失败，或只得到平台壳标题（如“小红书”“抖音”），保存前必须填写标题、店名或菜名之一。
+- 如果已识别到合法平台链接但内容解析不完整，允许以“待整理链接”保存，并始终提供打开原内容入口；完全无效的 URL 仍需先修正或手动补充。
+- 微博链接不自动解析，保存前显示引导弹窗，建议用户在大众点评搜索对应店铺；弹窗不承诺从微信直接唤起大众点评。
 - 收件箱保存新线索时必须带有添加人字段；v1 固定支持“小王”“小张”两位添加人和一个历史兼容值“未标记”。
 - 添加人字段在整理线索时必须继承到店铺、菜品和来源链接；后续编辑店铺/菜品时允许修正添加人。
 - 收件箱、想去列表/图列、店铺/菜品卡片和来源链接信息中必须能看到添加人。
@@ -152,14 +153,22 @@ v1 不评估 AI 生成质量。链接解析质量按以下方式评估：
 
 - `id`
 - `sourceUrl`
+- `rawShareText`
+- `sharedUrl`
+- `resolvedUrl`
 - `normalizedUrl`
+- `sourceKey`
 - `platform`
 - `addedBy`
 - `parseStatus`
 - `title`
 - `userLabel`
 - `previewImageUrl`
+- `sourceDescription`
+- `authorName`
+- `hashtags`
 - `contentType`
+- `failureCode`
 - `failureReason`
 - `note`
 - `triageStatus`
@@ -343,12 +352,20 @@ v1 不评估 AI 生成质量。链接解析质量按以下方式评估：
 ```json
 {
   "status": "success | failed | partial",
-  "platform": "大众点评 | 小红书 | 抖音 | 未知平台",
+  "platform": "大众点评 | 小红书 | 抖音 | 微博 | 未知平台",
+  "rawShareText": "string",
+  "sharedUrl": "string",
+  "resolvedUrl": "string",
   "originalUrl": "string",
   "normalizedUrl": "string",
+  "sourceKey": "string",
   "title": "string",
+  "sourceDescription": "string",
+  "authorName": "string",
+  "hashtags": ["string"],
   "imageUrl": "string",
-  "contentType": "store | note | video | link | unknown",
+  "contentType": "store | note | video | post | link | unknown",
+  "failureCode": "string",
   "failureReason": "string"
 }
 ```
@@ -356,9 +373,11 @@ v1 不评估 AI 生成质量。链接解析质量按以下方式评估：
 解析规则：
 
 - 平台无法识别：`failed`。
+- 微博等已识别但不自动解析的平台：`failed` + `unsupported_platform`，但允许保存来源链接。
 - 平台可识别但无法取得有效标题：`partial`。
-- 标题、平台、规范化 URL 至少具备足够识别信息：`success`。
-- `failed` 和 `partial` 都必须允许用户手动补充后保存。
+- 普通抖音/小红书文案提取到描述但店名未确认：`partial` + `needs_review`。
+- 店名、平台和规范化 URL 具备足够识别信息：`success`。
+- 已识别平台的 `failed` 和 `partial` 允许直接保存待整理链接，也允许用户手动补充后保存。
 
 ### Security & Privacy
 
@@ -431,6 +450,7 @@ v1 不评估 AI 生成质量。链接解析质量按以下方式评估：
 - 轻反馈如果只记录历史而不更新下一步行动状态，会导致“还想去”的店铺无法自然回到想去列表；v1 需要把 `VisitRecord` 作为历史事实，把 Store/Dish `status` 作为当前行动状态。
 - 添加人字段如果默认值过强，可能导致两人共用时误归属；v1 需要让保存入口的添加人选择足够醒目，并支持后续修正。
 - 链接预览后端若部署公网，需要限制最终抓取 URL 仍属于原支持平台，避免被当作通用代理访问内网或无关外部地址。
+- 短链接必须逐跳验证重定向，并限制响应字节、超时和并发，避免自动跳转或超大页面拖垮 X86。
 
 ### Current Implementation Status
 
@@ -444,7 +464,10 @@ v1 不评估 AI 生成质量。链接解析质量按以下方式评估：
 
 核心 v1 闭环和多轮审查问题已完成修复并补充回归测试：
 
-- 支持平台链接若只解析到平台壳标题，会标记为 `partial`，并要求用户补充标题、店名或菜名。
+- 支持平台链接若只解析到平台壳标题，会标记为 `partial`；链接仍可作为待整理线索保存并重新打开。
+- 来源同时保留原始分享文案、分享短链、解析后链接和稳定来源键；收件箱与整理后的店铺/菜品均可打开来源。
+- 普通抖音和小红书分享文案会提取描述、作者/话题、城市与品类线索，但具体店名不确定时保持 `needs_review`。
+- 微博会被识别为不支持自动解析的平台，并使用站内引导弹窗，不尝试强制唤起第三方 App。
 - 菜品搜索已继承绑定店铺的名称、城市、商圈、地址备注和标签。
 - 筛选区展示全部默认标签和自定义标签，不再截断前 18 个。
 - 标记到店轻反馈后，关联的已排期计划会自动变为 `completed`，不再停留在日历。

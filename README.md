@@ -10,6 +10,21 @@ npm start
 
 打开 `http://localhost:4173`。
 
+## X86 部署准备
+
+复制 `.env.example` 中的非敏感配置到部署环境：
+
+```bash
+HOST=0.0.0.0
+PORT=4173
+```
+
+- 进程健康检查：GET `/healthz`，成功时返回 `{ "status": "ok" }`。
+- 当前业务数据仍保存在浏览器 IndexedDB，可在“我的”中导出带版本信息的 JSON 备份。
+- `DATABASE_URL` 和 `SESSION_SECRET` 仅为后续 PostgreSQL 与登录阶段预留，当前版本不会读取或连接数据库。
+- 真实数据库连接串和会话密钥只能配置在 X86 环境中，不写入仓库。
+- Service Worker 只缓存同源静态 GET 资源，不缓存 `/api/*`、健康检查或跨域图片。
+
 ## 验证
 
 ```bash

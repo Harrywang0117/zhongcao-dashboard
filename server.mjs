@@ -3,10 +3,14 @@ import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { buildPreviewFromUrl, inferPlatform } from "./src/lib/link-preview.js";
+import {
+  buildPreviewFromUrl,
+  inferPlatform,
+  supportsMetadataFetch
+} from "./src/lib/link-preview.js";
+import { readServerConfig } from "./server/config.mjs";
 
-const HOST = process.env.HOST || "127.0.0.1";
-const PORT = Number(process.env.PORT || 4173);
+const { host: HOST, port: PORT } = readServerConfig();
 const BUILD_DIR = new URL("./dist/", import.meta.url);
 const PUBLIC_ASSET_DIR = new URL("./public/", import.meta.url);
 const MIME_TYPES = {
@@ -17,9 +21,23 @@ const MIME_TYPES = {
   ".webmanifest": "application/manifest+json; charset=utf-8",
   ".svg": "image/svg+xml; charset=utf-8"
 };
+const SECURITY_HEADERS = {
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "no-referrer"
+};
+const MAX_PREVIEW_REDIRECTS = 5;
+const MAX_PREVIEW_BYTES = 180_000;
+const MAX_CONCURRENT_PREVIEWS = 4;
+let activePreviewFetches = 0;
 
-const server = createServer(async (request, response) => {
+export async function handleRequest(request, response) {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
+
+  if (request.method === "GET" && requestUrl.pathname === "/healthz") {
+    sendJson(response, 200, { status: "ok" });
+    return;
+  }
 
   if (request.method === "POST" && requestUrl.pathname === "/api/link-preview") {
     await handleLinkPreview(request, response);
@@ -32,7 +50,9 @@ const server = createServer(async (request, response) => {
   }
 
   await serveStatic(requestUrl, response);
-});
+}
+
+const server = createServer(handleRequest);
 
 if (isDirectRun()) {
   server.listen(PORT, HOST, () => {
@@ -74,7 +94,7 @@ async function serveStatic(requestUrl, response) {
   const extension = extname(pathname);
 
   if (!isInsideDirectory(buildFileUrl, BUILD_DIR)) {
-    response.writeHead(403);
+    response.writeHead(403, SECURITY_HEADERS);
     response.end("Forbidden");
     return;
   }
@@ -82,6 +102,7 @@ async function serveStatic(requestUrl, response) {
   try {
     const data = await readFile(buildFileUrl);
     response.writeHead(200, {
+      ...SECURITY_HEADERS,
       "Content-Type": MIME_TYPES[extname(fileURLToPath(buildFileUrl))] || "application/octet-stream",
       "Cache-Control": "no-cache"
     });
@@ -91,6 +112,7 @@ async function serveStatic(requestUrl, response) {
       try {
         const data = await readFile(publicFileUrl);
         response.writeHead(200, {
+          ...SECURITY_HEADERS,
           "Content-Type": MIME_TYPES[extname(fileURLToPath(publicFileUrl))] || "application/octet-stream",
           "Cache-Control": "no-cache"
         });
@@ -103,6 +125,7 @@ async function serveStatic(requestUrl, response) {
 
     if (extension) {
       response.writeHead(404, {
+        ...SECURITY_HEADERS,
         "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-cache"
       });
@@ -111,46 +134,85 @@ async function serveStatic(requestUrl, response) {
     }
 
     const fallback = await readFile(new URL("./index.html", BUILD_DIR));
-    response.writeHead(200, { "Content-Type": MIME_TYPES[".html"] });
+    response.writeHead(200, {
+      ...SECURITY_HEADERS,
+      "Content-Type": MIME_TYPES[".html"],
+      "Cache-Control": "no-cache"
+    });
     response.end(fallback);
   }
 }
 
-async function fetchOpenGraphMetadata(url, expectedPlatform) {
+export async function fetchOpenGraphMetadata(url, expectedPlatform) {
   if (!isSafePreviewFetchUrl(url, expectedPlatform)) {
-    return {};
+    return previewFetchFailure("unsafe_url", "链接不符合安全抓取规则");
+  }
+  if (activePreviewFetches >= MAX_CONCURRENT_PREVIEWS) {
+    return previewFetchFailure("preview_busy", "在线解析繁忙，请稍后重试");
   }
 
+  activePreviewFetches += 1;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 3500);
 
   try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      redirect: "follow",
-      headers: {
-        "User-Agent": "Mozilla/5.0 zhongcao-link-preview/1.0"
+    let currentUrl = url;
+    for (let redirects = 0; redirects <= MAX_PREVIEW_REDIRECTS; redirects += 1) {
+      if (!isSafePreviewFetchUrl(currentUrl, expectedPlatform)) {
+        return previewFetchFailure("unsafe_redirect", "链接跳转到了不安全的地址");
       }
-    });
 
-    if (!isSafePreviewFetchUrl(response.url, expectedPlatform)) {
-      return {};
+      const response = await fetch(currentUrl, {
+        signal: controller.signal,
+        redirect: "manual",
+        headers: {
+          "User-Agent": "Mozilla/5.0 zhongcao-link-preview/1.0"
+        }
+      });
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        if (!location) return previewFetchFailure("redirect_missing_location", "平台跳转缺少目标地址");
+        if (redirects === MAX_PREVIEW_REDIRECTS) {
+          return previewFetchFailure("too_many_redirects", "平台链接跳转次数过多");
+        }
+        const nextUrl = new URL(location, currentUrl).toString();
+        if (!isSafePreviewFetchUrl(nextUrl, expectedPlatform)) {
+          return previewFetchFailure("unsafe_redirect", "链接跳转到了其他平台或不安全地址");
+        }
+        currentUrl = nextUrl;
+        continue;
+      }
+
+      const resolvedUrl = response.url || currentUrl;
+      if (!isSafePreviewFetchUrl(resolvedUrl, expectedPlatform)) {
+        return previewFetchFailure("unsafe_redirect", "链接最终地址不符合安全规则");
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      if (!response.ok) {
+        return previewFetchFailure("upstream_http_error", `平台页面返回 ${response.status}`);
+      }
+      if (!contentType.includes("text/html")) {
+        return previewFetchFailure("non_html_response", "平台没有返回可解析网页");
+      }
+
+      const html = await readResponseText(response, MAX_PREVIEW_BYTES);
+      return {
+        title: extractMeta(html, "og:title") || extractTitle(html),
+        description: extractMeta(html, "og:description") || extractMeta(html, "description"),
+        imageUrl: extractMeta(html, "og:image") || extractMeta(html, "twitter:image"),
+        resolvedUrl
+      };
     }
-
-    const contentType = response.headers.get("content-type") || "";
-    if (!response.ok || !contentType.includes("text/html")) {
-      return {};
-    }
-
-    const html = (await response.text()).slice(0, 180000);
-    return {
-      title: extractMeta(html, "og:title") || extractTitle(html),
-      imageUrl: extractMeta(html, "og:image") || extractMeta(html, "twitter:image")
-    };
-  } catch {
-    return {};
+    return previewFetchFailure("too_many_redirects", "平台链接跳转次数过多");
+  } catch (error) {
+    return error?.name === "AbortError"
+      ? previewFetchFailure("fetch_timeout", "在线解析超时，已保留原链接")
+      : previewFetchFailure("fetch_failed", "平台页面暂时无法访问，已保留原链接");
   } finally {
     clearTimeout(timeout);
+    activePreviewFetches -= 1;
   }
 }
 
@@ -160,10 +222,44 @@ export function isSafePreviewFetchUrl(url, expectedPlatform) {
     if (parsed.protocol !== "https:") return false;
     if (parsed.username || parsed.password) return false;
     if (inferPlatform(parsed.toString()) !== expectedPlatform) return false;
-    return expectedPlatform !== "未知平台";
+    return supportsMetadataFetch(expectedPlatform);
   } catch {
     return false;
   }
+}
+
+async function readResponseText(response, maxBytes) {
+  if (!response.body?.getReader) {
+    return (await response.text()).slice(0, maxBytes);
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (total < maxBytes) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const remaining = maxBytes - total;
+    const chunk = value.length > remaining ? value.slice(0, remaining) : value;
+    chunks.push(chunk);
+    total += chunk.length;
+    if (value.length > remaining) {
+      await reader.cancel();
+      break;
+    }
+  }
+
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return new TextDecoder().decode(merged);
+}
+
+function previewFetchFailure(failureCode, failureReason) {
+  return { failureCode, failureReason };
 }
 
 function extractMeta(html, key) {
@@ -225,6 +321,7 @@ function readJson(request) {
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, {
+    ...SECURITY_HEADERS,
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store"
   });
