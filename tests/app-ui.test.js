@@ -106,6 +106,16 @@ test("cover images avoid referrer leakage and decode asynchronously", () => {
   assert.match(appSource, /height="232"/);
 });
 
+test("missing covers expose a manual upload fallback and local cover APIs", () => {
+  assert.match(appSource, /function CoverUploadControl/);
+  assert.match(appSource, /accept="image\/jpeg,image\/png,image\/webp,image\/avif,image\/gif"/);
+  assert.match(appSource, /从相册添加封面/);
+  assert.match(appSource, /\/api\/cover-upload/);
+  assert.match(appSource, /\/api\/cover-fetch/);
+  assert.match(appSource, /imageFailureReason/);
+  assert.match(serverSource, /requestUrl\.pathname\.startsWith\("\/covers\/"\)/);
+});
+
 test("calendar date buttons have descriptive accessible names", () => {
   assert.match(appSource, /formatCalendarDateLabel/);
   assert.match(appSource, /aria-label=\{formatCalendarDateLabel/);
@@ -169,6 +179,8 @@ test("service worker caches only same-origin static GET requests", () => {
   assert.match(serviceWorkerSource, /requestUrl\.origin !== self\.location\.origin/);
   assert.match(serviceWorkerSource, /requestUrl\.pathname\.startsWith\("\/api\/"\)/);
   assert.match(serviceWorkerSource, /requestUrl\.pathname === "\/healthz"/);
+  assert.match(serviceWorkerSource, /if \(response\.ok\)/);
+  assert.match(serviceWorkerSource, /event\.request\.mode === "navigate"/);
 });
 
 test("profile can download a migration-ready local data backup", () => {

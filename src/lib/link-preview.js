@@ -151,6 +151,13 @@ export function buildPreviewFromUrl(input, metadata = {}) {
       authorName: "",
       hashtags: [],
       imageUrl: "",
+      metadataStatus: "failed",
+      metadataFailureCode: "invalid_url",
+      metadataFailureReason: `无法识别链接：${error.message}`,
+      imageStatus: "failed",
+      imageSource: "none",
+      imageFailureCode: "invalid_url",
+      imageFailureReason: "链接无效，无法获取封面",
       contentType: "unknown",
       suggested: {},
       failureCode: "invalid_url",
@@ -172,6 +179,20 @@ export function buildPreviewFromUrl(input, metadata = {}) {
   const sourceKey = buildSourceKey(platform, resolvedUrl);
   const isSupported = Boolean(rule?.autoParse);
   const hasMeaningfulTitle = isMeaningfulTitle(title, platform);
+  const hasMetadata = Object.keys(metadata || {}).length > 0;
+  const metadataStatus = String(
+    metadata.metadataStatus || (metadata.failureCode ? "failed" : hasMetadata ? "success" : "not_requested")
+  );
+  const imageStatus = String(
+    metadata.imageStatus || (imageUrl ? "stored" : isSupported ? (hasMetadata ? "not_found" : "not_requested") : "unsupported")
+  );
+  const imageSource = String(metadata.imageSource || (imageUrl ? "automatic" : "none"));
+  const imageFailureCode = String(
+    metadata.imageFailureCode || (!imageUrl && imageStatus === "not_found" ? "metadata_image_missing" : "")
+  );
+  const imageFailureReason = String(
+    metadata.imageFailureReason || (!imageUrl && imageStatus === "not_found" ? "平台页面没有提供可用封面" : "")
+  );
 
   let status = "failed";
   let failureCode = "unsupported_platform";
@@ -205,6 +226,11 @@ export function buildPreviewFromUrl(input, metadata = {}) {
     authorName,
     hashtags,
     imageUrl,
+    metadataStatus,
+    imageStatus,
+    imageSource,
+    imageFailureCode,
+    imageFailureReason,
     contentType,
     suggested,
     failureCode,

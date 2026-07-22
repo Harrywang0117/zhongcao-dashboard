@@ -1,4 +1,4 @@
-export const DATA_VERSION = 3;
+export const DATA_VERSION = 4;
 
 export const DEFAULT_TAGS = [
   { name: "火锅", group: "category" },
@@ -75,7 +75,14 @@ export function createSourceLink(preview, addedBy = "unknown") {
     platform: preview.platform || "未知平台",
     ...source,
     title: preview.title || "",
+    metadataStatus: String(preview.metadataStatus || "unknown"),
+    metadataFailureCode: String(preview.metadataFailureCode || ""),
+    metadataFailureReason: String(preview.metadataFailureReason || ""),
     imageUrl: preview.imageUrl || "",
+    imageStatus: String(preview.imageStatus || (preview.imageUrl ? "stored" : "not_found")),
+    imageSource: String(preview.imageSource || (preview.imageUrl ? "automatic" : "none")),
+    imageFailureCode: String(preview.imageFailureCode || ""),
+    imageFailureReason: String(preview.imageFailureReason || ""),
     sourceDescription: String(preview.sourceDescription || "").trim(),
     authorName: String(preview.authorName || "").trim(),
     hashtags: normalizeStringList(preview.hashtags),
@@ -116,7 +123,14 @@ export function createInboxItem({ preview, fallbackTitle = "", note = "", addedB
     parseStatus,
     title,
     userLabel: manualTitle,
+    metadataStatus: String(safePreview.metadataStatus || "unknown"),
+    metadataFailureCode: String(safePreview.metadataFailureCode || ""),
+    metadataFailureReason: String(safePreview.metadataFailureReason || ""),
     previewImageUrl: safePreview.imageUrl || "",
+    imageStatus: String(safePreview.imageStatus || (safePreview.imageUrl ? "stored" : "not_found")),
+    imageSource: String(safePreview.imageSource || (safePreview.imageUrl ? "automatic" : "none")),
+    imageFailureCode: String(safePreview.imageFailureCode || ""),
+    imageFailureReason: String(safePreview.imageFailureReason || ""),
     sourceDescription: String(safePreview.sourceDescription || "").trim(),
     authorName: String(safePreview.authorName || "").trim(),
     hashtags: normalizeStringList(safePreview.hashtags),
@@ -154,6 +168,9 @@ export function applyInboxReparsePreview(item, preview) {
   item.hashtags = normalizeStringList(safePreview.hashtags?.length ? safePreview.hashtags : item.hashtags);
   item.failureCode = String(safePreview.failureCode || "").trim();
   item.failureReason = safePreview.failureReason || "";
+  item.metadataStatus = String(safePreview.metadataStatus || item.metadataStatus || "unknown");
+  item.metadataFailureCode = String(safePreview.metadataFailureCode || "");
+  item.metadataFailureReason = String(safePreview.metadataFailureReason || "");
   item.suggested = normalizeSuggestion(safePreview.suggested);
 
   if (!hasManualTitle && parseStatus === "success" && parsedTitle) {
@@ -164,6 +181,15 @@ export function applyInboxReparsePreview(item, preview) {
   }
   if (safePreview.imageUrl) {
     item.previewImageUrl = safePreview.imageUrl;
+    item.imageStatus = String(safePreview.imageStatus || "stored");
+    item.imageSource = String(safePreview.imageSource || "automatic");
+    item.imageFailureCode = "";
+    item.imageFailureReason = "";
+  } else if (!item.previewImageUrl) {
+    item.imageStatus = String(safePreview.imageStatus || item.imageStatus || "not_found");
+    item.imageSource = "none";
+    item.imageFailureCode = String(safePreview.imageFailureCode || "");
+    item.imageFailureReason = String(safePreview.imageFailureReason || "");
   }
 
   item.updatedAt = nowIso();
@@ -687,7 +713,14 @@ function sourceLinkFromInboxItem(item) {
     normalizedUrl: item.resolvedUrl || item.normalizedUrl || item.sharedUrl || "",
     sourceKey: item.sourceKey || "",
     title: item.title,
+    metadataStatus: item.metadataStatus || "unknown",
+    metadataFailureCode: item.metadataFailureCode || "",
+    metadataFailureReason: item.metadataFailureReason || "",
     imageUrl: item.previewImageUrl,
+    imageStatus: item.imageStatus || (item.previewImageUrl ? "stored" : "not_found"),
+    imageSource: item.imageSource || (item.previewImageUrl ? "automatic" : "none"),
+    imageFailureCode: item.imageFailureCode || "",
+    imageFailureReason: item.imageFailureReason || "",
     sourceDescription: item.sourceDescription || "",
     authorName: item.authorName || "",
     hashtags: normalizeStringList(item.hashtags),

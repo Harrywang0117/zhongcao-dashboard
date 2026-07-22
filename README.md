@@ -17,13 +17,17 @@ npm start
 ```bash
 HOST=0.0.0.0
 PORT=4173
+DATA_DIR=./data
 ```
 
 - 进程健康检查：GET `/healthz`，成功时返回 `{ "status": "ok" }`。
 - 当前业务数据仍保存在浏览器 IndexedDB，可在“我的”中导出带版本信息的 JSON 备份。
+- 自动解析到的封面和手动上传的封面会落到 `DATA_DIR/covers/`，接口只返回同源 `/covers/...` 地址；部署时需要把整个 `DATA_DIR` 挂到持久卷并纳入备份。
+- 封面接口包括 `POST /api/cover-upload`（JPEG/PNG/WebP/AVIF/GIF，最大 5MB）、`POST /api/cover-fetch` 和只读 `GET /covers/*`。
+- 平台要求登录、未提供图片或图片下载失败时，文字信息仍可保存，前端会明确提示并允许从相册补封面。
 - `DATABASE_URL` 和 `SESSION_SECRET` 仅为后续 PostgreSQL 与登录阶段预留，当前版本不会读取或连接数据库。
 - 真实数据库连接串和会话密钥只能配置在 X86 环境中，不写入仓库。
-- Service Worker 只缓存同源静态 GET 资源，不缓存 `/api/*`、健康检查或跨域图片。
+- Service Worker 只缓存成功的同源静态 GET 资源和同源封面，不缓存 `/api/*`、健康检查或跨域图片。
 
 ## 验证
 
@@ -47,4 +51,4 @@ npm test
 - 日历按日期计划，支持改期、放回想去、不想去了
 - 到店轻反馈：还想去、一般、不再去
 - 回收站、封面图兜底、本地数据版本迁移
-- 轻后端 `/api/link-preview`，不保存用户收藏数据
+- 轻后端 `/api/link-preview`，封面落本地持久目录，收藏结构仍保存在浏览器

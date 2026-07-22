@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolve } from "node:path";
 
 import { readServerConfig } from "../server/config.mjs";
 
 test("reads deployment host and port from environment values", () => {
   assert.deepEqual(readServerConfig({ HOST: "0.0.0.0", PORT: "8080" }), {
     host: "0.0.0.0",
-    port: 8080
+    port: 8080,
+    dataDir: resolve("data")
   });
 });
 

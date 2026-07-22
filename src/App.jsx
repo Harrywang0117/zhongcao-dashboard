@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ImagePlus,
   Loader2,
   Minus,
   Plus,
@@ -111,7 +112,6 @@ export default function App() {
   const [planDates, setPlanDates] = useState({});
   const [visitDates, setVisitDates] = useState({});
   const [rescheduleDates, setRescheduleDates] = useState({});
-  const imageBackfillIds = useRef(new Set());
   const toastTimer = useRef(0);
   const demoMode = useRef(isDemoMode());
 
@@ -144,23 +144,6 @@ export default function App() {
       visits: activeItems(state.visitRecords).length
     };
   }, [state]);
-
-  useEffect(() => {
-    if (!state || tab !== "inbox") return;
-
-    pendingInboxItems(state)
-      .filter(
-        (item) =>
-          !item.previewImageUrl &&
-          item.platform === "大众点评" &&
-          item.contentType === "store" &&
-          !imageBackfillIds.current.has(item.id)
-      )
-      .forEach((item) => {
-        imageBackfillIds.current.add(item.id);
-        backfillInboxImage(item.id);
-      });
-  }, [state, tab]);
 
   function showToast(message, undoPayload = null) {
     setToast(message);
@@ -202,8 +185,65 @@ export default function App() {
       if (!response.ok) throw new Error("接口不可用");
       return await response.json();
     } catch {
-      return buildPreviewFromUrl(url);
+      return {
+        ...buildPreviewFromUrl(url),
+        metadataStatus: "failed",
+        imageStatus: "failed",
+        imageSource: "none",
+        imageFailureCode: "preview_api_unavailable",
+        imageFailureReason: "在线封面解析暂时不可用，可手动添加封面"
+      };
     }
+  }
+
+  async function uploadCoverFile(file) {
+    if (!file) throw new Error("请选择图片");
+    if (file.size > 5 * 1024 * 1024) throw new Error("图片不能超过 5MB");
+
+    const response = await fetch("/api/cover-upload", {
+      method: "POST",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file
+    });
+    const payload = await readJsonResponse(response);
+    if (!response.ok || !payload.imageUrl) {
+      throw new Error(payload.imageFailureReason || "封面上传失败");
+    }
+    return payload;
+  }
+
+  async function snapshotCoverUrl(url, sourcePageUrl = "") {
+    const trimmed = String(url || "").trim();
+    if (!trimmed || trimmed.startsWith("/covers/")) return trimmed;
+    if (!trimmed.startsWith("https://")) throw new Error("封面链接必须使用 HTTPS");
+
+    const response = await fetch("/api/cover-fetch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: trimmed, sourcePageUrl })
+    });
+    const payload = await readJsonResponse(response);
+    if (!response.ok || !payload.imageUrl) {
+      throw new Error(payload.imageFailureReason || "封面链接暂时无法保存");
+    }
+    return payload.imageUrl;
+  }
+
+  async function uploadInboxCover(id, file) {
+    const stored = await uploadCoverFile(file);
+    const nextState = structuredClone(state);
+    const item = nextState.inboxItems.find((candidate) => candidate.id === id);
+    if (!item || item.deletedAt || item.triageStatus === "organized") {
+      throw new Error("这条线索已经不存在或已整理");
+    }
+    item.previewImageUrl = stored.imageUrl;
+    item.imageStatus = "stored";
+    item.imageSource = "manual";
+    item.imageFailureCode = "";
+    item.imageFailureReason = "";
+    item.updatedAt = new Date().toISOString();
+    await persist(nextState, "封面已保存");
+    return stored;
   }
 
   async function savePreviewToInbox(preview, values) {
@@ -221,7 +261,9 @@ export default function App() {
     rememberLastAddedBy(addedBy);
     setQuickDraft(createEmptyQuickSaveDraft());
     const message = preview.status === "success"
-      ? "已保存到收件箱"
+      ? !preview.imageUrl
+        ? "已保存文字，封面可稍后补充"
+        : "已保存到收件箱"
       : fallbackTitle
         ? "已补充关键信息并保存"
         : "已保存为待整理链接";
@@ -319,31 +361,11 @@ export default function App() {
     await mutate((nextState) => {
       const current = nextState.inboxItems.find((candidate) => candidate.id === id);
       applyInboxReparsePreview(current, preview);
-    }, preview.status === "success" ? "重新解析成功" : "仍需补充关键信息");
-  }
-
-  async function backfillInboxImage(id) {
-    const item = state.inboxItems.find((candidate) => candidate.id === id);
-    if (!item || item.deletedAt || item.triageStatus === "organized" || item.previewImageUrl) {
-      imageBackfillIds.current.delete(id);
-      return;
-    }
-
-    try {
-      const preview = await requestLinkPreview(item.sourceUrl || item.normalizedUrl);
-      if (!preview.imageUrl) {
-        imageBackfillIds.current.delete(id);
-        return;
-      }
-      await mutate((nextState) => {
-        const current = nextState.inboxItems.find((candidate) => candidate.id === id);
-        if (current && !current.deletedAt && current.triageStatus !== "organized" && !current.previewImageUrl) {
-          applyInboxReparsePreview(current, preview);
-        }
-      });
-    } catch {
-      imageBackfillIds.current.delete(id);
-    }
+    }, preview.status === "success"
+      ? preview.imageUrl
+        ? "重新解析成功"
+        : "文字已更新，封面仍需补充"
+      : "仍需补充关键信息");
   }
 
   async function scheduleTarget(type, id) {
@@ -402,7 +424,6 @@ export default function App() {
   }
 
   async function clearLocalData() {
-    imageBackfillIds.current.clear();
     setTab("inbox");
     setQuery("");
     setSelectedTags([]);
@@ -471,6 +492,9 @@ export default function App() {
     saveInboxFromForm,
     organizeInbox,
     reparseInboxItem,
+    uploadInboxCover,
+    uploadCoverFile,
+    snapshotCoverUrl,
     scheduleTarget,
     visitTarget,
     updatePlan,
@@ -549,7 +573,8 @@ function InboxScreen({
   pendingQuickSave,
   saveInboxFromForm,
   organizeInbox,
-  reparseInboxItem
+  reparseInboxItem,
+  uploadInboxCover
 }) {
   const items = pendingInboxItems(state);
 
@@ -573,7 +598,13 @@ function InboxScreen({
       <SectionHead title="待整理线索" description="一次处理几条就好，别让收藏变成负担。" count={`${items.length} 条`} />
       {items.length ? (
         items.slice(0, 20).map((item) => (
-          <InboxItem key={item.id} item={item} onOrganize={organizeInbox} onReparse={reparseInboxItem} />
+          <InboxItem
+            key={item.id}
+            item={item}
+            onOrganize={organizeInbox}
+            onReparse={reparseInboxItem}
+            onUploadCover={uploadInboxCover}
+          />
         ))
       ) : (
         <EmptyState>粘贴一个链接开始收集</EmptyState>
@@ -640,7 +671,7 @@ function QuickSaveForm({ draft, setDraft, pending, onSubmit }) {
   );
 }
 
-function InboxItem({ item, onOrganize, onReparse }) {
+function InboxItem({ item, onOrganize, onReparse, onUploadCover }) {
   const formRef = useRef(null);
   const suggestion = item.suggested || {};
   const suggestedTags = Array.isArray(suggestion.tagNames) ? suggestion.tagNames.join(", ") : "";
@@ -667,6 +698,18 @@ function InboxItem({ item, onOrganize, onReparse }) {
           <p className="rounded-lg border border-red-200 border-l-4 border-l-red-500 bg-red-50 px-3 py-2 text-sm font-semibold text-red-900">
             {item.failureReason || "需要手动补充标题、店名或菜名"}
           </p>
+        )}
+        {!item.previewImageUrl && (
+          <div className="grid gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            <p className="font-semibold">
+              {item.imageFailureReason || "没有自动取得封面，可从相册补充"}
+            </p>
+            <CoverUploadControl
+              currentUrl={item.previewImageUrl}
+              label={`为${item.title}添加封面`}
+              onUpload={(file) => onUploadCover(item.id, file)}
+            />
+          </div>
         )}
         {item.authorName && <p className="text-sm font-semibold text-zinc-600">作者：{item.authorName}</p>}
         {item.sourceDescription && item.sourceDescription !== item.title && (
@@ -1030,37 +1073,65 @@ function CardExtras(props) {
   );
 }
 
-function EditForm({ state, type, item, mutate, openPanels, setOpenPanels }) {
+function EditForm({
+  state,
+  type,
+  item,
+  mutate,
+  openPanels,
+  setOpenPanels,
+  uploadCoverFile,
+  snapshotCoverUrl,
+  showToast
+}) {
   const formRef = useRef(null);
   const panelId = `edit:${type}:${item.id}`;
+  const [coverImageUrl, setCoverImageUrl] = useState(item.coverImageUrl || "");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setCoverImageUrl(item.coverImageUrl || "");
+  }, [item.coverImageUrl]);
 
   async function submit(event) {
     event.preventDefault();
-    const values = Object.fromEntries(new FormData(formRef.current).entries());
-    const message = type === "store" ? "店铺已更新" : "菜品已更新";
-    await mutate((nextState) => {
-      if (type === "store") {
-        updateStore(nextState, item.id, {
-          name: values.name,
-          addedBy: values.addedBy,
-          city: values.city,
-          businessDistrict: values.businessDistrict,
-          addressNote: values.addressNote,
-          tagNames: splitTags(values.tags),
-          coverImageUrl: values.coverImageUrl,
-          note: values.note
-        });
-      } else {
-        updateDish(nextState, item.id, {
-          name: values.name,
-          addedBy: values.addedBy,
-          storeId: values.storeId,
-          tagNames: splitTags(values.tags),
-          coverImageUrl: values.coverImageUrl,
-          note: values.note
-        });
-      }
-    }, message);
+    if (saving) return;
+    setSaving(true);
+    try {
+      const values = Object.fromEntries(new FormData(formRef.current).entries());
+      const requestedCoverUrl = String(values.coverImageUrl || "").trim();
+      const storedCoverUrl = requestedCoverUrl && requestedCoverUrl !== item.coverImageUrl
+        ? await snapshotCoverUrl(requestedCoverUrl, sourceHref(item.sourceLinks?.[0] || {}))
+        : requestedCoverUrl;
+      const message = type === "store" ? "店铺已更新" : "菜品已更新";
+      await mutate((nextState) => {
+        if (type === "store") {
+          updateStore(nextState, item.id, {
+            name: values.name,
+            addedBy: values.addedBy,
+            city: values.city,
+            businessDistrict: values.businessDistrict,
+            addressNote: values.addressNote,
+            tagNames: splitTags(values.tags),
+            coverImageUrl: storedCoverUrl,
+            note: values.note
+          });
+        } else {
+          updateDish(nextState, item.id, {
+            name: values.name,
+            addedBy: values.addedBy,
+            storeId: values.storeId,
+            tagNames: splitTags(values.tags),
+            coverImageUrl: storedCoverUrl,
+            note: values.note
+          });
+        }
+      }, message);
+    } catch (error) {
+      showToast(error.message || "封面暂时无法保存");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -1092,9 +1163,34 @@ function EditForm({ state, type, item, mutate, openPanels, setOpenPanels }) {
           </Field>
         )}
         <Field label="标签"><input name="tags" autoComplete="off" defaultValue={(item.tagNames || []).join(", ")} /></Field>
-        <Field label="封面链接"><input name="coverImageUrl" type="url" inputMode="url" autoComplete="off" defaultValue={item.coverImageUrl || ""} placeholder="https://..." /></Field>
+        <div className="grid gap-1.5">
+          <span className="text-sm font-bold text-zinc-600">封面</span>
+          <div className="grid gap-2">
+            <input
+              name="coverImageUrl"
+              type="text"
+              inputMode="url"
+              autoComplete="off"
+              value={coverImageUrl}
+              placeholder="上传图片，或粘贴 HTTPS 图片链接"
+              onChange={(event) => setCoverImageUrl(event.target.value)}
+            />
+            <CoverUploadControl
+              currentUrl={coverImageUrl}
+              label={`为${item.name}选择封面`}
+              onUpload={async (file) => {
+                const stored = await uploadCoverFile(file);
+                setCoverImageUrl(stored.imageUrl);
+                return stored;
+              }}
+            />
+            <p className="mini-label">外部图片会先保存到自己的服务器，再写入资料。</p>
+          </div>
+        </div>
         <Field label="备注"><textarea name="note" rows={2} autoComplete="off" defaultValue={item.note || ""} /></Field>
-        <button className="primary-button" type="submit">保存编辑</button>
+        <button className="primary-button" type="submit" disabled={saving} aria-busy={saving}>
+          {saving ? "保存中..." : "保存编辑"}
+        </button>
       </form>
     </details>
   );
@@ -1572,9 +1668,55 @@ function IconButton({ label, onClick, children }) {
   );
 }
 
+function CoverUploadControl({ currentUrl, label, onUpload }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleChange(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || pending) return;
+
+    setPending(true);
+    setError("");
+    try {
+      await onUpload(file);
+    } catch (uploadError) {
+      setError(uploadError.message || "封面上传失败");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-1.5">
+      <label
+        className="secondary-button flex w-fit cursor-pointer items-center gap-2"
+        aria-label={label}
+        aria-disabled={pending}
+      >
+        <input
+          className="sr-only"
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/avif,image/gif"
+          disabled={pending}
+          onChange={handleChange}
+        />
+        {pending ? <Loader2 className="animate-spin" size={18} /> : <ImagePlus size={18} />}
+        {pending ? "上传中..." : currentUrl ? "更换封面" : "从相册添加封面"}
+      </label>
+      {error && <p className="text-sm font-semibold text-red-700" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 function Cover({ url, label, compact = false }) {
   const [failed, setFailed] = useState(false);
   const initial = platformInitial(label);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [url]);
 
   if (url && !failed) {
     return (
@@ -1748,6 +1890,14 @@ function splitTags(value) {
     .split(/[,，\s]+/)
     .map((tag) => tag.trim())
     .filter(Boolean);
+}
+
+async function readJsonResponse(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
 }
 
 function syncOpenPanel(event, id, openPanels, setOpenPanels) {

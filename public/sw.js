@@ -1,4 +1,4 @@
-const CACHE_NAME = "zhongcao-react-v2";
+const CACHE_NAME = "zhongcao-react-v3";
 const ASSETS = [
   "/",
   "/index.html",
@@ -34,10 +34,17 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        }
         return response;
       })
-      .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/index.html")))
+      .catch(async () => {
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        if (event.request.mode === "navigate") return caches.match("/index.html");
+        return Response.error();
+      })
   );
 });
