@@ -52,9 +52,17 @@ test("React UI keeps accessible navigation and icon labels", () => {
 
 test("forms preserve mobile touch and iOS input zoom fixes", () => {
   assert.match(stylesSource, /font-size:\s*16px/);
-  assert.match(stylesSource, /min-height:\s*44px/);
   assert.match(stylesSource, /touch-action:\s*manipulation/);
   assert.match(stylesSource, /:focus-visible/);
+
+  // Touch-target floor: any explicit px min-height on a control must clear
+  // 44px (0 is allowed — it only ever resets an inherited value).
+  const minHeights = [...stylesSource.matchAll(/min-height:\s*(\d+)px/g)].map((match) =>
+    Number(match[1])
+  );
+  assert.ok(minHeights.length > 0, "expected explicit px min-height declarations");
+  const belowFloor = minHeights.filter((value) => value > 0 && value < 44);
+  assert.deepEqual(belowFloor, [], `min-height below the 44px touch floor: ${belowFloor}`);
 });
 
 test("quick save accepts platform share text and exposes pending state", () => {
