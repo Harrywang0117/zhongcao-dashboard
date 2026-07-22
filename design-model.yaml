@@ -1,0 +1,292 @@
+meta:
+  name: zhongcao-app
+  industry: personal-food-discovery-and-decision
+  register: product
+  persona: Warm Amber on White
+  design_read: "个人美食决策工具 · 内容优先 + 生活化 · SOUL=7 · SPECTACLE=1 · DENSITY=5 · no hero engine"
+  spec: docs/UI-REDESIGN-SPEC.md
+  preview: zhongcao-finesse-ui-preview.png
+
+dials:
+  soul: 7
+  spectacle: 1
+  density: 5
+
+# 2026-07-21: form language switched to Claymorphism. The previous
+# restrained-product look read as "business back-office"; the root cause was
+# the *shape* language (1px hairlines, flat cards), not the palette. Clay
+# replaces it with volume: chunky radii, 2-3px light borders, inner highlight
+# + inner shade, a solid bottom "edge" on pressables, and a squish press.
+# Register stays `product` — no grain, no vignette, no hero engine.
+# 2026-07-21 (5th pass): reference 鸭觅 (Meituan's food-community app).
+# It reads warm and playful on a plain WHITE canvas with one amber accent —
+# the personality is carried by the mascot, hand-drawn icons and large food
+# photos, while the chrome is nearly invisible (list rows have no card shell
+# at all). That reframed our problem: we had been making the *interface*
+# playful with heavy clay, and that weight is what looked cheap. So the clay
+# was dialled way down and the photo went 84px -> 130px.
+style:
+  name: Content-first, lightly rounded
+  radius_px: { control: 14, input: 14, card: 20, photo: 16 }
+  border: "1px solid rgba(31,27,22,.10)"
+  clay_raise: "inset 0 2px 2px rgba(255,255,255,.9), inset 0 -7px 12px -7px rgba(88,72,150,.28), 0 10px 22px -12px rgba(88,72,150,.38)"
+  clay_sunk: "inset 0 3px 6px -2px rgba(88,72,150,.26), inset 0 -2px 2px rgba(255,255,255,.8)"
+  pressable_edge: none  # removed with the clay dial-down; press = scale(.98)
+  list_row: "no card shell — photo + type on white, separated by spacing"
+  photo_px: 130
+  ease: "cubic-bezier(.34,1.56,.64,1)"
+  touch_target_min_px: 44
+
+principles:
+  - content-first
+  - mobile-first
+  - one-primary-action-per-screen
+  - real-state-only
+  - motion-explains-state
+  - recoverable-actions
+
+color:
+  strategy: single-saturated-accent
+  # 2026-07-21 (4th pass): the saturated periwinkle base read as *cheap*
+  # next to the red. Diagnosis from real-world references (Duolingo, Bumble,
+  # Cash App): products that use bold colour without looking cheap all share
+  # one structure — exactly ONE saturated colour, everything else neutral.
+  # Our base was ~68% saturation covering 60%+ of the screen, so it was a
+  # second saturated colour competing with the accent (a 60-30-10 violation).
+  # Fix: keep the cool hue but drop it to near-neutral so it reads grey, not
+  # purple. Red is now the only saturated UI colour; the per-category tiles
+  # are the polychrome layer and live only in the imagery.
+  brand_accent_rule: "Amber is the ONLY brand colour. Category colours are content and live only in covers/thumbnails. Chrome stays white + hairline."
+  bg:
+    name: White
+    value: "#FFFFFF"
+    role: page background
+  surface:
+    name: Cool Clay
+    value: "#FDFCFF"
+    role: cards inputs bottom navigation
+  ink:
+    name: Violet Ink
+    value: "#221C33"
+    role: headings selected surfaces dark buttons
+  body:
+    name: Field Gray
+    value: "#4E4668"
+    role: body text
+  muted:
+    name: Quiet Stone
+    value: "#6B6386"
+    role: secondary metadata (>=4.5:1 on surface)
+  faint:
+    name: Mist Line
+    value: "#948CAE"
+    role: tertiary icons and non-text separators
+  accent:
+    name: Amber
+    value: "#F2B33D"
+    role: primary actions focus and brand emphasis
+  accent_selected:
+    name: On Amber
+    value: "#2A2016"
+    role: text on an amber fill — amber CANNOT carry white text (2.15:1)
+  accent_pressed:
+    name: Amber Ink
+    value: "#96631F"
+    role: pressed primary action
+  border:
+    name: Clay Rim
+    value: "rgba(255,255,255,0.9)"
+    role: 2px light border that reads as the lit edge of a clay object
+  overlay:
+    name: Deep Scrim
+    value: "rgba(13,22,18,0.52)"
+    role: sheet and dialog backdrop
+  danger:
+    name: Cinder
+    value: "#B42318"
+    role: destructive state only
+  success:
+    name: Pine
+    value: "#2F6B4F"
+    role: success state only
+  warning:
+    name: Ochre
+    value: "#965B17"
+    role: warning state only
+
+type:
+  ui: '-apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", "Segoe UI", sans-serif'
+  display: same-as-ui
+  mono: ui-monospace, SFMono-Regular, Menlo, monospace
+  weights:
+    page_title: 800
+    section_title: 750
+    card_title: 750
+    body: 450
+    label: 650
+  sizes_px: [12, 13, 14, 16, 18, 20, 28]
+  page_title_tracking: -0.04em
+  body_line_height: 1.55
+
+spacing:
+  scale_px: [4, 8, 12, 16, 24, 32]
+  page_gutter_px: 16
+  touch_gap_min_px: 8
+  touch_target_min_px: 44
+
+shape:
+  # superseded by the `style:` block above — kept in sync deliberately
+  radius_px:
+    control: 20
+    input: 18
+    card: 26
+    feature_card: 30
+  border: "2px solid rgba(255,255,255,.9)"
+  shadows:
+    card: "0 20px 48px -36px rgba(23,43,34,0.38)"
+    overlay: "0 28px 64px -30px rgba(13,32,23,0.55)"
+
+substrate:
+  grain_opacity: 0.025
+  grain_base_frequency: 0.82
+  pure_white_or_black: forbidden
+  hard_gray_borders: forbidden
+  gradient_text: forbidden
+  default_glassmorphism: forbidden
+
+layout:
+  mobile_baseline: 390x844
+  test_widths_px: [375, 390, 430, 768, 1024]
+  phone_columns: 1
+  tablet_breakpoint_px: 640
+  desktop_breakpoint_px: 960
+  desktop_max_width_px: 960
+  navigation:
+    mobile: bottom-nav-5-items
+    desktop: optional-left-rail
+    labels_always_visible: true
+
+pages:
+  inbox:
+    primary_action: 保存线索
+    signature: parse-preview-state
+  wishlist:
+    primary_action: 安排日期
+    signature: recent-item-feature-card
+    feature_rule: first filtered item sorted by updatedAt
+  calendar:
+    primary_action: 管理当天计划
+    signature: shared-date-selection
+  visited:
+    primary_action: 记录或查看轻反馈
+    signature: feedback-timeline
+  profile:
+    primary_action: none
+    signature: grouped-local-data-management
+
+components:
+  - AppShell
+  - TopBar
+  - BottomNav
+  - SearchField
+  - SegmentedControl
+  - FilterChip
+  - PrimaryButton
+  - SecondaryButton
+  - TextButton
+  - DestructiveButton
+  - FoodCover
+  - FeaturedPlaceCard
+  - CompactPlaceCard
+  - ContributorChip
+  - TagChip
+  - BottomSheet
+  - Toast
+  - SkeletonCard
+  - EmptyState
+  - InlineError
+  - CalendarGrid
+  - PlanCard
+  - VisitCard
+
+motion:
+  principle: state-and-spatial-continuity-only
+  durations_ms:
+    press: 100
+    fast: 160
+    base: 220
+    emphasis: 320
+    sheet: 360
+  easing:
+    enter: "cubic-bezier(0.16,1,0.3,1)"
+    exit: "cubic-bezier(0.4,0,1,1)"
+  spring:
+    stiffness: 400
+    damping: 40
+    mass: 0.8
+  stagger_ms: 35
+  required_patterns:
+    - shared-bottom-nav-indicator
+    - shared-segmented-indicator
+    - stable-size-button-status-crossfade
+    - card-to-bottom-sheet-continuity
+    - list-insert-delete-undo
+    - shared-calendar-date-indicator
+  forbidden_patterns:
+    - infinite-decorative-animation
+    - magnetic-buttons
+    - cursor-followers
+    - three-dimensional-card-tilt
+    - scroll-jacking
+    - stacked-scroll-cards
+    - animated-top-left-width-height
+  reduced_motion:
+    disable: [translation, scale, spring, stagger, shimmer]
+    preserve: [color, icon, text, focus, status]
+
+imagery:
+  required_for_food_cards: true
+  production_source_order: [parsed-real-image, user-provided-image, honest-platform-placeholder]
+  concept_preview_images_in_production: forbidden
+  formats: [avif, webp]
+  reserve_aspect_ratio: true
+
+accessibility:
+  body_contrast_min: 4.5
+  large_text_and_graphics_contrast_min: 3.0
+  focus_visible: required
+  icon_button_aria_label: required
+  toast_aria_live: polite
+  sheet_focus_trap_and_restore: required
+
+protected:
+  - five-tab-information-architecture
+  - domain-and-storage-semantics
+  - addedBy-values-and-meaning
+  - undo-and-recovery-flows
+  - local-first-data-boundary
+  - json-backup-export
+
+non_goals:
+  - map
+  - social-feed
+  - public-ranking
+  - account-system
+  - cloud-sync
+  - ai-score
+  - webgl
+  - threejs
+  - hero-engine
+
+implementation:
+  prerequisite: verify-data-integrity-p0-or-explicitly-defer
+  dependency_policy: css-first-motion-library-needs-user-approval
+  first_page: wishlist
+  rollout: [tokens-and-primitives, wishlist, inbox-and-calendar, visited-and-profile, motion-and-performance, docs-and-regression]
+  verification:
+    - npm-test
+    - npm-run-build
+    - git-diff-check
+    - browser-five-tab-smoke
+    - reduced-motion
+    - responsive-screenshots

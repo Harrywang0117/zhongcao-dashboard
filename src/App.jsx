@@ -1,24 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpDown,
-  CalendarDays,
   Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Heart,
-  Inbox,
   Loader2,
   Minus,
   Plus,
   RotateCw,
   Search,
-  Sparkles,
   ThumbsDown,
   ThumbsUp,
   Trash2,
-  Undo2,
-  UserRound
+  Undo2
 } from "lucide-react";
 
 import {
@@ -47,6 +42,14 @@ import {
 import { buildPreviewFromUrl, platformInitial } from "./lib/link-preview.js";
 import { createStateBackup, loadState, saveState } from "./lib/storage.js";
 import { createDemoState, isDemoMode } from "./lib/demo-data.js";
+import { Mascot } from "./components/Mascot.jsx";
+import {
+  CalendarIcon,
+  CheckIcon,
+  HeartIcon,
+  InboxIcon,
+  PersonIcon
+} from "./components/HandIcons.jsx";
 
 const TAB_LABELS = {
   inbox: "收件箱",
@@ -57,11 +60,11 @@ const TAB_LABELS = {
 };
 
 const TAB_ICONS = {
-  inbox: Inbox,
-  wishlist: Heart,
-  calendar: CalendarDays,
-  visited: CheckCircle2,
-  profile: UserRound
+  inbox: InboxIcon,
+  wishlist: HeartIcon,
+  calendar: CalendarIcon,
+  visited: CheckIcon,
+  profile: PersonIcon
 };
 
 const FEEDBACK_LABELS = {
@@ -508,8 +511,8 @@ function TopBar({ tab, counts, onQuickAdd }) {
 
   return (
     <header className="app-bar">
-      <div className="flex items-center gap-3">
-        <span className="brand-mark text-lg leading-none" aria-hidden="true">种</span>
+      <div className="flex items-center gap-2.5">
+        <Mascot size={46} />
         <div className="min-w-0 flex-1">
           <h1 className="font-display text-[26px] leading-none text-zinc-950">{TAB_LABELS[tab]}</h1>
           <p className="mt-1 truncate text-sm font-medium text-zinc-500">{subtitle}</p>
@@ -870,8 +873,8 @@ function FeatureCard(props) {
 
   return (
     <div className="grid gap-2">
-      <article className="feature-card">
-        <div className={`feature-cover feature-cover-${foodMeta(item).key}`}>
+      <article className={`feature-card feature-card-${foodMeta(item).key}`}>
+        <div className="feature-cover">
           {item.coverImageUrl && !imageFailed ? (
             <img
               src={item.coverImageUrl}
@@ -889,8 +892,8 @@ function FeatureCard(props) {
         </div>
         <div className="feature-body">
           <div className="min-w-0">
-            <h2 className="font-display text-2xl leading-tight text-white">{item.name}</h2>
-            <p className="mt-1.5 truncate text-sm font-medium text-white/60">{meta || (type === "store" ? "店铺" : "菜品")}</p>
+            <h2 className="font-display text-2xl leading-tight text-zinc-950">{item.name}</h2>
+            <p className="mt-1.5 truncate text-sm font-medium text-zinc-500">{meta || (type === "store" ? "店铺" : "菜品")}</p>
           </div>
           <button className="feature-cta" type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
             安排日期
@@ -1406,7 +1409,7 @@ function BottomNav({ tab, setTab }) {
             aria-current={active ? "page" : undefined}
             onClick={() => setTab(id)}
           >
-            <Icon size={21} strokeWidth={active ? 2.4 : 2} />
+            <Icon size={22} active={active} />
             <span className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{TAB_LABELS[id]}</span>
           </button>
         );
@@ -1591,9 +1594,7 @@ function Cover({ url, label, compact = false }) {
 function EmptyState({ children }) {
   return (
     <div className="empty-state">
-      <span className="empty-state-icon" aria-hidden="true">
-        <Sparkles size={22} strokeWidth={2.2} />
-      </span>
+      <Mascot size={72} mood="calm" />
       {children}
     </div>
   );

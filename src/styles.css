@@ -1,14 +1,18 @@
 @import "tailwindcss";
 
 /*
-  种草 · 城市食册 (Urban Food Index)
+  种草 · 白底暖琥珀 (Warm Amber on White)
   --------------------------------------------------------------
-  Restrained mineral-warm surface, near-black ink for headings /
-  dark cards / active nav, and a single Pepper accent for the
-  primary action. The app's existing Tailwind color utilities
-  (emerald-*, zinc-*, stone-*, red-*) are remapped onto this
-  palette from the @theme block so every screen shifts coherently.
-  Reference: docs/UI-REDESIGN-SPEC.md + design-model.yaml.
+  Content-first, after studying 鸭觅: the canvas is white, the only
+  brand colour is one warm amber, and the personality comes from the
+  CONTENT layer — large food imagery and the per-category tiles —
+  not from the chrome. Earlier passes tried to make the interface
+  itself playful (heavy clay shadows, thick rims, tinted background)
+  and that is what read as cheap.
+  Amber cannot carry white text (2.15:1), so every amber fill uses
+  --color-on-accent dark text, and amber-as-text uses the darker
+  --color-accent-ink. Tailwind utilities (emerald-*, zinc-*, stone-*)
+  are remapped from @theme so every screen shifts together.
 */
 
 @theme {
@@ -20,37 +24,52 @@
   --font-serif: var(--font-sans);
   --font-weight-black: 800;
 
-  /* --- Brand palette (vibrant "food-court" direction) ------------ */
-  --color-bg: #fdf6ec; /* bright fresh cream */
-  --color-surface: #fffdf9;
-  --color-surface-sunk: #f6f1e8;
-  --color-ink: #241f1b; /* dark showcase surfaces (featured card, FAB, toast) */
-  --color-accent: #ff5a36; /* vivid tomato — glows, borders, small graphics */
-  --color-selected: #d93b1c; /* filled selected surfaces with white text (AA-safe) */
-  --color-accent-pressed: #c5361a;
+  /* --- Brand palette (white canvas + single amber accent) ------- */
+  --color-bg: #ffffff; /* clean white canvas — content supplies the colour */
+  --color-surface: #ffffff;
+  --color-surface-sunk: #f4f3f0; /* tag pills, quote blocks */
+  --color-ink: #1f1b16;
+  /* Amber cannot carry white text (2.15:1). Fills use dark text; amber-as-text
+     on white uses the darker --color-accent-ink. */
+  --color-accent: #f2b33d; /* amber fill + icons */
+  --color-on-accent: #2a2016; /* text/icon on an amber fill (8:1) */
+  --color-accent-ink: #96631f; /* amber-toned TEXT on white (5.1:1) */
+  --color-selected: #f2b33d;
+  --color-accent-pressed: #d99a28;
+
+  /* --- Elevation: deliberately light. Hairlines and generous spacing
+         separate things; shadows only lift the few floating surfaces. */
+  --clay-tint: 40, 30, 18;
+  --clay-raise: 0 1px 2px rgba(var(--clay-tint), 0.04),
+    0 8px 20px -14px rgba(var(--clay-tint), 0.18);
+  --clay-raise-lg: 0 2px 4px rgba(var(--clay-tint), 0.05),
+    0 16px 32px -20px rgba(var(--clay-tint), 0.22);
+  --clay-sunk: none;
+  --hairline: rgba(31, 27, 22, 0.1);
+  --clay-ease: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* --- Remapped accent (was emerald) ---------------------------- */
-  --color-emerald-950: #241f1b; /* headings / dark surfaces / big numbers */
-  --color-emerald-900: #33291f;
-  --color-emerald-800: #d63a1c; /* small accent labels */
-  --color-emerald-100: #ffd6c7;
-  --color-emerald-50: #ffe7df; /* warm accent tint */
+  --color-emerald-950: #1f1b16; /* headings */
+  --color-emerald-900: #2b261f;
+  --color-emerald-800: #96631f; /* small accent labels */
+  --color-emerald-100: #ffe6b8;
+  --color-emerald-50: #fff5e0; /* amber tint */
 
-  /* --- Remapped neutrals (was zinc) → warm mineral grey/ink ------ */
-  --color-zinc-950: #1d1b19; /* ink — headings */
-  --color-zinc-900: #26231f;
-  --color-zinc-700: #423e38;
-  --color-zinc-600: #55504a; /* body text */
-  --color-zinc-500: #6b6359; /* muted metadata — AA 4.5:1 on surface */
-  --color-zinc-400: #948b7e; /* faint icons / placeholders */
-  --color-zinc-300: #d5cdc1;
-  --color-zinc-200: #e6e0d6; /* hairlines */
-  --color-zinc-100: #efe9df;
-  --color-zinc-50: #f5f0e8; /* subtle fills */
+  /* --- Remapped neutrals (was zinc) → warm grey/ink ------------- */
+  --color-zinc-950: #1f1b16; /* ink — headings */
+  --color-zinc-900: #2b261f;
+  --color-zinc-700: #4a443b;
+  --color-zinc-600: #5b544a; /* body text */
+  --color-zinc-500: #767065; /* muted metadata — AA 4.9:1 on white */
+  --color-zinc-400: #a29a8d; /* faint icons / placeholders */
+  --color-zinc-300: #cfc9bf;
+  --color-zinc-200: #e5e1da; /* hairlines */
+  --color-zinc-100: #efece6;
+  --color-zinc-50: #f7f5f1; /* subtle fills */
 
-  /* --- Surfaces (was stone) → bright chalk ----------------------- */
-  --color-stone-50: #fffdf9;
-  --color-stone-100: #f8f3ec;
+  /* --- Surfaces (was stone) → white ----------------------------- */
+  --color-stone-50: #ffffff;
+  --color-stone-100: #f7f5f1;
 
   /* --- Semantic warm alert (was red) ----------------------------- */
   --color-red-900: #7c2912;
@@ -58,17 +77,17 @@
   --color-red-200: #f1c9ba;
   --color-red-50: #fbe7de;
 
-  /* --- Shadows (soft, warm-neutral, low spread) ------------------ */
-  --shadow-soft: 0 1px 2px rgba(29, 27, 25, 0.04),
-    0 18px 40px -30px rgba(29, 27, 25, 0.28);
-  --shadow-tight: 0 1px 2px rgba(29, 27, 25, 0.04),
-    0 8px 22px -16px rgba(29, 27, 25, 0.22);
-  --shadow-nav: 0 -1px 3px rgba(29, 27, 25, 0.03),
-    0 16px 40px -18px rgba(29, 27, 25, 0.34);
-  --shadow-lift: 0 2px 4px rgba(29, 27, 25, 0.05),
-    0 26px 52px -30px rgba(29, 27, 25, 0.32);
-  --shadow-ink: 0 18px 44px -22px rgba(29, 27, 25, 0.55);
-  --shadow-accent: 0 12px 26px -12px rgba(217, 59, 28, 0.5);
+  /* --- Shadows (soft, warm, low spread) ------------------------- */
+  --shadow-soft: 0 1px 2px rgba(40, 32, 70, 0.05),
+    0 18px 40px -30px rgba(40, 32, 70, 0.3);
+  --shadow-tight: 0 1px 2px rgba(40, 32, 70, 0.05),
+    0 8px 22px -16px rgba(40, 32, 70, 0.24);
+  --shadow-nav: 0 -1px 3px rgba(40, 32, 70, 0.04),
+    0 16px 40px -18px rgba(40, 32, 70, 0.36);
+  --shadow-lift: 0 2px 4px rgba(40, 32, 70, 0.06),
+    0 26px 52px -30px rgba(40, 32, 70, 0.34);
+  --shadow-ink: 0 18px 44px -22px rgba(40, 32, 70, 0.55);
+  --shadow-accent: 0 8px 18px -10px rgba(217, 154, 40, 0.45);
 }
 
 @layer base {
@@ -81,13 +100,8 @@
   body {
     min-height: 100%;
     margin: 0;
-    color: #241f1b;
-    background-color: #fdf6ec;
-    background-image:
-      radial-gradient(120% 90% at 100% -10%, rgba(255, 90, 54, 0.09), transparent 46%),
-      radial-gradient(105% 80% at 0% 2%, rgba(247, 178, 61, 0.1), transparent 44%),
-      linear-gradient(180deg, #fef9f1 0%, #fdf6ec 58%, #fbf1e4 100%);
-    background-attachment: fixed;
+    color: #1f1b16;
+    background-color: #ffffff;
   }
 
   body {
@@ -104,8 +118,8 @@
   }
 
   ::selection {
-    background: rgba(227, 74, 44, 0.16);
-    color: #201d1a;
+    background: rgba(242, 179, 61, 0.3);
+    color: #1f1b16;
   }
 
   button,
@@ -115,7 +129,7 @@
   summary {
     font: inherit;
     touch-action: manipulation;
-    -webkit-tap-highlight-color: rgba(227, 74, 44, 0.12);
+    -webkit-tap-highlight-color: rgba(242, 179, 61, 0.2);
   }
 
   button {
@@ -130,27 +144,28 @@
   input,
   textarea,
   select {
-    min-height: 44px;
+    min-height: 46px;
     width: 100%;
-    border: 1px solid rgba(29, 27, 25, 0.1);
+    border: 1px solid var(--hairline);
     border-radius: 14px;
-    background: #fcfbf9;
-    padding: 12px 14px;
-    color: #1d1b19;
+    background: #fff;
+    padding: 12px 15px;
+    color: #1f1b16;
     font-size: 16px;
     outline: none;
+    box-shadow: var(--clay-sunk);
     transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
   }
 
   input::placeholder,
   textarea::placeholder {
-    color: #a89f92;
+    color: #a29a8d;
   }
 
   input:hover,
   textarea:hover,
   select:hover {
-    border-color: rgba(29, 27, 25, 0.18);
+    border-color: var(--color-zinc-300);
   }
 
   input:focus-visible,
@@ -168,7 +183,7 @@
   select:focus-visible {
     border-color: var(--color-accent);
     background: #fff;
-    box-shadow: 0 0 0 3px rgba(227, 74, 44, 0.16);
+    box-shadow: 0 0 0 3px rgba(242, 179, 61, 0.35);
   }
 
   img {
@@ -184,39 +199,43 @@
 }
 
 @layer components {
+  /* 430px = the widest phone in the spec's test set. The UI is designed at
+     390px; letting it stretch to 560 on desktop made every control read as
+     oversized. Below 430 the shell is simply full-width, so phones are
+     unaffected. */
   .app-shell {
-    @apply mx-auto min-h-screen w-full max-w-[560px];
+    @apply mx-auto min-h-screen w-full max-w-[430px];
     padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px) + 16px);
   }
 
   /* --- Top bar --------------------------------------------------- */
   .app-bar {
     @apply sticky top-0 z-20 px-4 pb-3 pt-4;
-    background: linear-gradient(180deg, rgba(240, 238, 234, 0.94), rgba(238, 236, 232, 0.78));
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.82));
     backdrop-filter: saturate(1.15) blur(14px);
   }
 
   .brand-mark {
-    @apply grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white;
-    background: linear-gradient(155deg, #ff6a44 0%, #f2481f 100%);
-    box-shadow: 0 8px 18px -8px rgba(242, 72, 31, 0.6),
-      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    @apply grid h-11 w-11 shrink-0 place-items-center rounded-[14px];
+    color: var(--color-on-accent);
+    background: var(--color-accent);
     font-weight: 800;
   }
 
   .icon-fab {
-    @apply grid h-11 w-11 shrink-0 place-items-center rounded-full text-white;
-    background: var(--color-ink);
-    box-shadow: var(--shadow-ink);
-    transition: transform 0.16s ease, filter 0.16s ease;
+    @apply grid h-11 w-11 shrink-0 place-items-center rounded-full;
+    color: var(--color-on-accent);
+    background: var(--color-accent);
+    box-shadow: var(--shadow-accent);
+    transition: background 0.16s ease, transform 0.12s ease;
   }
 
   .icon-fab:hover {
-    filter: brightness(1.12);
+    background: var(--color-accent-pressed);
   }
 
   .icon-fab:active {
-    transform: scale(0.94);
+    transform: scale(0.95);
   }
 
   /* --- Search field ---------------------------------------------- */
@@ -225,18 +244,18 @@
   }
 
   .search-field input {
-    @apply pl-11 pr-4;
+    @apply pl-12 pr-4;
     min-height: 52px;
-    border-radius: 18px;
-    background: #fcfbf9;
-    border-color: rgba(29, 27, 25, 0.08);
-    box-shadow: var(--shadow-tight);
-    font-weight: 500;
+    border-radius: 999px;
+    background: #fff;
+    border-color: var(--hairline);
+    box-shadow: none;
+    font-weight: 600;
   }
 
   .search-field .search-icon {
     @apply pointer-events-none absolute left-4 top-1/2 -translate-y-1/2;
-    color: #9a9082;
+    color: #8b83a8;
   }
 
   /* --- Filter chip row ------------------------------------------- */
@@ -250,14 +269,14 @@
   }
 
   .filter-chip {
-    @apply inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-4 text-[15px];
-    font-weight: 650;
-    color: #46423c;
-    background: #fcfbf9;
-    border: 1px solid rgba(29, 27, 25, 0.08);
-    box-shadow: var(--shadow-tight);
+    @apply inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-4 text-[15px];
+    font-weight: 700;
+    color: var(--color-zinc-700);
+    background: #fff;
+    border-color: var(--hairline);
+    box-shadow: none;
     transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease,
-      transform 0.14s ease;
+      transform 0.12s ease;
   }
 
   .filter-chip:active {
@@ -270,10 +289,13 @@
   }
 
   .filter-chip-active {
-    color: #fff;
-    background: var(--color-selected);
+    color: var(--color-on-accent);
+    background: var(--color-accent);
     border-color: transparent;
-    box-shadow: var(--shadow-accent);
+  }
+
+  .filter-chip-active .chip-count {
+    color: rgba(42, 32, 22, 0.55);
   }
 
   .filter-chip-active .chip-count {
@@ -282,99 +304,94 @@
 
   /* --- Panels ---------------------------------------------------- */
   .panel {
-    @apply grid gap-4 rounded-3xl border p-5;
-    border-color: rgba(29, 27, 25, 0.07);
+    @apply grid gap-4 rounded-[20px] border p-5;
+    border-color: var(--hairline);
     background: var(--color-surface);
-    box-shadow: var(--shadow-soft);
+    box-shadow: var(--clay-raise);
   }
 
   .capture-panel {
     @apply relative overflow-hidden;
-    background: linear-gradient(165deg, #fdfcfa 0%, #f7f3ec 100%);
-    border-color: rgba(29, 27, 25, 0.08);
+    background: linear-gradient(165deg, #fffaf3 0%, #ffefe0 100%);
   }
 
   .item-card {
-    @apply overflow-hidden rounded-3xl border;
-    border-color: rgba(29, 27, 25, 0.07);
+    @apply overflow-hidden rounded-[20px] border;
+    border-color: var(--hairline);
     background: var(--color-surface);
-    box-shadow: var(--shadow-soft);
-    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-      box-shadow 0.2s ease, border-color 0.16s ease;
+    box-shadow: var(--clay-raise);
+    transition: transform 0.22s var(--clay-ease), box-shadow 0.22s ease;
   }
 
   @media (hover: hover) {
     .item-card:hover {
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-lift);
+      transform: translateY(-3px);
+      box-shadow: var(--clay-raise-lg);
     }
   }
 
-  /* --- Featured place card (dark hero) --------------------------- */
+  /* --- Featured place card (candy hero, tinted per category) ----- */
   .feature-card {
     @apply relative overflow-hidden rounded-[30px];
-    background: var(--color-ink);
-    box-shadow: var(--shadow-ink);
-    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+    /* --hero-a/--hero-b: bright cover gradient; --hero-body: deep
+       saturated base that keeps white text at >=4.5:1 */
+    --hero-a: #ffb27a;
+    --hero-b: #ff7a45;
+    background: #fff;
+    border: 1px solid var(--hairline);
+    box-shadow: var(--clay-raise);
+    transition: box-shadow 0.2s ease;
   }
+
+  .feature-card-noodle { --hero-a: #ffd98a; --hero-b: #ffb03a; }
+  .feature-card-hotpot { --hero-a: #ff9a8a; --hero-b: #ff5f4a; }
+  .feature-card-sushi { --hero-a: #8fe3d0; --hero-b: #3fc7ac; }
+  .feature-card-coffee { --hero-a: #e3c6a5; --hero-b: #c79a6b; }
+  .feature-card-dessert { --hero-a: #ffb8d6; --hero-b: #ff77ae; }
+  .feature-card-bakery { --hero-a: #ffd98f; --hero-b: #ffc04d; }
+  .feature-card-seafood { --hero-a: #ffafa8; --hero-b: #ff7a70; }
+  .feature-card-curry { --hero-a: #ffd48a; --hero-b: #ffb63f; }
+  .feature-card-tea { --hero-a: #c6e8a8; --hero-b: #96d468; }
+  .feature-card-izakaya { --hero-a: #cdb6ef; --hero-b: #a377e0; }
+  .feature-card-western { --hero-a: #b8dcc5; --hero-b: #82c49c; }
+  .feature-card-meat { --hero-a: #ffc0a8; --hero-b: #ff8a62; }
 
   @media (hover: hover) {
     .feature-card:hover {
-      transform: translateY(-2px);
+      box-shadow: var(--clay-raise-lg);
     }
   }
 
   .feature-cover {
     @apply relative grid place-items-center overflow-hidden;
     aspect-ratio: 20 / 13;
-    --glow: rgba(255, 120, 80, 0.32);
-    background:
-      radial-gradient(90% 72% at 50% 28%, var(--glow), transparent 70%),
-      linear-gradient(165deg, #2f2622 0%, #17120f 100%);
+    background: linear-gradient(158deg, var(--hero-a) 0%, var(--hero-b) 100%);
   }
-
-  .feature-cover-sushi { --glow: rgba(52, 199, 176, 0.34); }
-  .feature-cover-dessert { --glow: rgba(255, 130, 190, 0.34); }
-  .feature-cover-tea { --glow: rgba(150, 210, 110, 0.32); }
-  .feature-cover-izakaya { --glow: rgba(170, 120, 240, 0.34); }
-  .feature-cover-coffee { --glow: rgba(214, 150, 90, 0.32); }
-  .feature-cover-hotpot { --glow: rgba(255, 90, 70, 0.36); }
-  .feature-cover-bakery { --glow: rgba(255, 190, 90, 0.32); }
-  .feature-cover-curry { --glow: rgba(255, 175, 70, 0.32); }
 
   .feature-cover img {
     @apply absolute inset-0 h-full w-full object-cover;
   }
 
-  .feature-cover::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(180deg, transparent 40%, rgba(20, 17, 15, 0.55));
-  }
-
   .feature-glyph {
-    font-size: 84px;
+    font-size: 92px;
     line-height: 1;
-    filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.35));
+    filter: drop-shadow(0 12px 18px rgba(90, 40, 20, 0.28));
   }
 
   .feature-tag {
     @apply absolute left-4 top-4 z-10 inline-flex items-center rounded-full px-3 py-1.5 text-[13px];
-    font-weight: 650;
-    color: #fbf7f2;
-    background: rgba(28, 24, 21, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    backdrop-filter: blur(6px);
+    font-weight: 700;
+    color: var(--color-ink);
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.7);
   }
 
   .feature-contributor {
     @apply absolute bottom-4 right-4 z-10 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px];
-    font-weight: 600;
-    color: #f3efe9;
-    background: rgba(28, 24, 21, 0.55);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    backdrop-filter: blur(6px);
+    font-weight: 650;
+    color: var(--color-ink);
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.7);
   }
 
   .feature-contributor::before {
@@ -382,49 +399,52 @@
     width: 6px;
     height: 6px;
     border-radius: 999px;
-    background: var(--color-accent);
+    background: var(--color-accent-ink);
   }
 
   .feature-body {
-    @apply flex items-end justify-between gap-4 px-5 pb-5 pt-4;
+    @apply flex items-end justify-between gap-4 px-4 pb-4 pt-3.5;
+    background: #fff;
   }
 
   .feature-cta {
-    @apply inline-flex min-h-12 shrink-0 items-center justify-center rounded-2xl px-5 text-[15px] text-white;
-    font-weight: 750;
-    background: var(--color-selected);
+    @apply inline-flex min-h-11 shrink-0 items-center justify-center rounded-[14px] px-5 text-[15px];
+    font-weight: 800;
+    color: var(--color-on-accent);
+    background: var(--color-accent);
     box-shadow: var(--shadow-accent);
-    transition: filter 0.16s ease, transform 0.14s ease;
-  }
-
-  .feature-cta:hover {
-    filter: brightness(1.05);
+    transition: background 0.16s ease, transform 0.12s ease;
   }
 
   .feature-cta:active {
-    transform: translateY(1px);
+    transform: scale(0.98);
   }
 
   /* --- Compact place card ---------------------------------------- */
+  /* Content-first row: no card shell at all. The photo and the type are the
+     design; spacing does the separating. */
   .place-card {
-    @apply grid items-center gap-3.5 rounded-[26px] border p-3.5;
-    grid-template-columns: 64px minmax(0, 1fr) auto;
-    border-color: rgba(29, 27, 25, 0.06);
-    background: var(--color-surface);
-    box-shadow: var(--shadow-tight);
-    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease;
+    @apply grid items-start gap-3.5 rounded-[18px] p-1 text-left;
+    grid-template-columns: 130px minmax(0, 1fr) auto;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    transition: background 0.16s ease;
   }
 
   @media (hover: hover) {
     .place-card:hover {
-      transform: translateY(-1px);
-      box-shadow: var(--shadow-soft);
+      background: var(--color-zinc-50);
     }
   }
 
+  .place-card:active {
+    background: var(--color-zinc-100);
+  }
+
   .place-thumb {
-    @apply grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[20px];
-    background: linear-gradient(160deg, #ffe6da 0%, #ffc9b3 100%);
+    @apply grid h-[130px] w-[130px] shrink-0 place-items-center overflow-hidden rounded-[16px];
+    background: linear-gradient(160deg, #ffe8d6 0%, #ffd0b0 100%);
   }
 
   .place-thumb-noodle { background: linear-gradient(160deg, #fff1cf 0%, #ffdd97 100%); }
@@ -446,7 +466,7 @@
   }
 
   .place-thumb .glyph {
-    font-size: 32px;
+    font-size: 60px;
     line-height: 1;
   }
 
@@ -463,13 +483,17 @@
 
   /* --- Sort chip ------------------------------------------------- */
   .sort-chip {
-    @apply inline-flex min-h-10 shrink-0 items-center gap-2 rounded-full px-3.5 text-sm;
-    font-weight: 650;
-    color: #5c574f;
-    background: var(--color-surface);
-    border: 1px solid rgba(29, 27, 25, 0.08);
-    box-shadow: var(--shadow-tight);
-    transition: color 0.16s ease, border-color 0.16s ease;
+    @apply inline-flex min-h-10 shrink-0 items-center gap-2 rounded-full border px-3.5 text-sm;
+    font-weight: 700;
+    color: var(--color-zinc-700);
+    background: #fff;
+    border-color: var(--hairline);
+    box-shadow: none;
+    transition: background 0.16s ease, transform 0.12s ease;
+  }
+
+  .sort-chip:active {
+    transform: scale(0.97);
   }
 
   .sort-chip:hover {
@@ -478,40 +502,41 @@
   }
 
   /* --- Buttons --------------------------------------------------- */
+  /* Chunky clay button: a solid bottom "edge" gives real thickness;
+     pressing sinks the button into its own edge. */
   .primary-button {
-    @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl px-5 text-white;
-    font-weight: 750;
-    background: var(--color-selected);
+    @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-[16px] px-5;
+    font-weight: 800;
+    color: var(--color-on-accent);
+    background: var(--color-accent);
     box-shadow: var(--shadow-accent);
-    transition: filter 0.16s ease, transform 0.14s ease;
+    transition: background 0.16s ease, transform 0.12s ease;
   }
 
   .primary-button:hover {
-    filter: brightness(1.05);
+    background: var(--color-accent-pressed);
   }
 
   .primary-button:active {
-    transform: translateY(1px);
+    transform: scale(0.98);
   }
 
   .secondary-button {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-4;
-    font-weight: 650;
-    color: #46423c;
-    border-color: rgba(29, 27, 25, 0.1);
-    background: var(--color-surface);
-    transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease,
-      transform 0.14s ease;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-[14px] border px-4;
+    font-weight: 700;
+    color: var(--color-zinc-700);
+    border-color: var(--hairline);
+    background: #fff;
+    transition: background 0.16s ease, border-color 0.16s ease, transform 0.12s ease;
   }
 
   .secondary-button:hover {
-    border-color: rgba(227, 74, 44, 0.34);
-    background: var(--color-emerald-50);
-    color: var(--color-accent-pressed);
+    background: var(--color-zinc-50);
+    border-color: var(--color-zinc-300);
   }
 
   .secondary-button:active {
-    transform: translateY(1px);
+    transform: scale(0.98);
   }
 
   .danger-zone {
@@ -591,7 +616,7 @@
     font-weight: 600;
     color: #5c574f;
     background: var(--color-surface-sunk);
-    border: 1px solid rgba(29, 27, 25, 0.05);
+    border: 1px solid rgba(40, 32, 70, 0.06);
   }
 
   .chip-overflow {
@@ -606,7 +631,7 @@
     font-weight: 600;
     color: #5c574f;
     background: var(--color-surface-sunk);
-    border: 1px solid rgba(29, 27, 25, 0.05);
+    border: 1px solid rgba(40, 32, 70, 0.06);
   }
 
   .added-by-chip::before {
@@ -709,13 +734,14 @@
 
   /* --- Floating bottom nav (shared sliding indicator) ------------ */
   .bottom-nav {
-    @apply fixed bottom-0 left-1/2 z-30 grid -translate-x-1/2 grid-cols-5 gap-1 rounded-[26px] border p-2;
+    @apply fixed bottom-0 left-1/2 z-30 grid -translate-x-1/2 grid-cols-5 gap-1 rounded-[24px] border p-2;
     position: fixed;
-    width: min(calc(100% - 24px), 496px);
+    /* stays inside the 430px shell with the same 12px gutters */
+    width: min(calc(100% - 24px), 406px);
     bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
-    border-color: rgba(29, 27, 25, 0.06);
-    background: rgba(252, 251, 249, 0.9);
-    box-shadow: var(--shadow-nav);
+    border-color: var(--hairline);
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: var(--clay-raise-lg);
     backdrop-filter: saturate(1.3) blur(18px);
   }
 
@@ -725,11 +751,11 @@
     bottom: 8px;
     left: 8px;
     width: calc((100% - 32px) / 5);
-    border-radius: 18px;
-    background: var(--color-selected);
-    box-shadow: var(--shadow-accent);
+    border-radius: 16px;
+    background: var(--color-accent);
+    box-shadow: none;
     transform: translateX(calc(var(--nav-index, 0) * (100% + 4px)));
-    transition: transform 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform 0.4s var(--clay-ease);
     z-index: 0;
   }
 
@@ -747,11 +773,11 @@
   }
 
   .nav-item-active {
-    color: #fff;
+    color: var(--color-on-accent);
   }
 
   .nav-item-active:hover {
-    color: #fff;
+    color: var(--color-on-accent);
   }
 
   /* --- Toast ----------------------------------------------------- */
@@ -893,7 +919,7 @@
   .segmented-option {
     position: relative;
     z-index: 1;
-    min-height: 40px;
+    min-height: 44px;
     border: 0;
     background: transparent;
     font-weight: 700;
