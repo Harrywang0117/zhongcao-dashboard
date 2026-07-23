@@ -258,14 +258,20 @@
     color: #8b83a8;
   }
 
-  /* --- Filter chip row ------------------------------------------- */
-  .chip-row {
-    @apply -mx-4 flex gap-2.5 overflow-x-auto px-4 pb-1;
-    scrollbar-width: none;
+  /* --- Filters --------------------------------------------------- */
+  .filter-stack {
+    @apply grid gap-2.5;
   }
 
-  .chip-row::-webkit-scrollbar {
-    display: none;
+  .filter-row,
+  .tag-filter-row {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .tag-filter-row .filter-chip,
+  .filter-more {
+    min-height: 44px;
+    padding-inline: 14px;
   }
 
   .filter-chip {
@@ -300,6 +306,14 @@
 
   .filter-chip-active .chip-count {
     color: rgba(255, 255, 255, 0.62);
+  }
+
+  .filter-more {
+    @apply inline-flex shrink-0 items-center rounded-full border text-sm;
+    font-weight: 800;
+    color: var(--color-accent-ink);
+    background: var(--color-emerald-50);
+    border-color: rgba(242, 179, 61, 0.36);
   }
 
   /* --- Panels ---------------------------------------------------- */
@@ -972,11 +986,11 @@
 @keyframes zc-toast {
   from {
     opacity: 0;
-    transform: translate(-50%, 10px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: translateY(0);
   }
 }
 

@@ -747,14 +747,23 @@ function InboxItem({ item, onOrganize, onReparse, onUploadCover }) {
 
 function WishlistScreen(props) {
   const { state, query, setQuery, selectedTags, setSelectedTags, addedByFilter, setAddedByFilter } = props;
-  const [sortBy, setSortBy] = useState("updatedAt");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [tagsExpanded, setTagsExpanded] = useState(false);
 
   const searched = searchCollections(state, query);
-  const tagStores = filterByTags(searched.stores, selectedTags)
-    .filter((store) => ["want", "planned"].includes(store.status))
+  const searchedStores = searched.stores.filter((store) => ["want", "planned"].includes(store.status));
+  const searchedDishes = searched.dishes.filter((dish) => ["want", "planned"].includes(dish.status));
+  const allWishlistEntries = [
+    ...activeItems(state.stores)
+      .filter((store) => ["want", "planned"].includes(store.status))
+      .map((item) => ({ type: "store", item })),
+    ...activeItems(state.dishes)
+      .filter((dish) => ["want", "planned"].includes(dish.status))
+      .map((item) => ({ type: "dish", item }))
+  ];
+  const tagStores = filterByTags(searchedStores, selectedTags)
     .map((item) => ({ type: "store", item }));
-  const tagDishes = filterByTags(searched.dishes, selectedTags)
-    .filter((dish) => ["want", "planned"].includes(dish.status))
+  const tagDishes = filterByTags(searchedDishes, selectedTags)
     .map((item) => ({ type: "dish", item }));
   const base = [...tagStores, ...tagDishes];
 
@@ -763,7 +772,7 @@ function WishlistScreen(props) {
     xiaowang: base.filter((entry) => entry.item.addedBy === "xiaowang").length,
     xiaozhang: base.filter((entry) => entry.item.addedBy === "xiaozhang").length
   };
-  const tagChips = topTagNames(base, 4);
+  const tagChips = tagNamesByFrequency(allWishlistEntries);
 
   const items = base
     .filter((entry) => addedByFilter === "all" || entry.item.addedBy === addedByFilter)
@@ -771,6 +780,9 @@ function WishlistScreen(props) {
 
   const featured = items[0];
   const rest = items.slice(1);
+  const sortHeading = sortBy === "createdAt" ? "最近收藏" : "最近更新";
+  const sortLabel = sortBy === "createdAt" ? "收藏时间" : "更新时间";
+  const nextSortLabel = sortBy === "createdAt" ? "更新时间" : "收藏时间";
 
   return (
     <>
@@ -782,37 +794,37 @@ function WishlistScreen(props) {
         setSelectedTags={setSelectedTags}
         counts={filterCounts}
         tagChips={tagChips}
+        tagsExpanded={tagsExpanded}
+        setTagsExpanded={setTagsExpanded}
       />
 
       {featured ? (
-        <FeatureCard type={featured.type} item={featured.item} {...props} />
-      ) : (
-        <EmptyState>先去收件箱整理一条线索，就会出现在这里</EmptyState>
-      )}
-
-      {featured && (
         <>
           <div className="flex items-center justify-between gap-3 px-1 pt-1">
-            <h2 className="font-display text-xl text-zinc-950">最近收藏</h2>
+            <h2 className="font-display text-xl text-zinc-950">{sortHeading}</h2>
             <button
               className="sort-chip"
               type="button"
-              onClick={() => setSortBy(sortBy === "updatedAt" ? "createdAt" : "updatedAt")}
+              aria-label={`当前按${sortLabel}排序，切换到${nextSortLabel}`}
+              onClick={() => setSortBy(sortBy === "createdAt" ? "updatedAt" : "createdAt")}
             >
               <ArrowUpDown size={15} strokeWidth={2.2} />
-              {sortBy === "updatedAt" ? "更新时间" : "收藏时间"}
+              {sortLabel}
             </button>
           </div>
+          <FeatureCard type={featured.type} item={featured.item} {...props} />
           <div className="grid gap-3">
             {rest.length ? (
               rest.map(({ type, item }) => (
                 <PlaceCard key={`${type}:${item.id}`} type={type} item={item} {...props} />
               ))
             ) : (
-              <p className="mini-label px-1">没有更多收藏了</p>
+              <p className="mini-label px-1">没有更多想去项目了</p>
             )}
           </div>
         </>
+      ) : (
+        <EmptyState>先去收件箱整理一条线索，就会出现在这里</EmptyState>
       )}
     </>
   );
@@ -834,27 +846,61 @@ function SearchField({ value, onChange }) {
   );
 }
 
-function ChipFilters({ addedByFilter, setAddedByFilter, selectedTags, setSelectedTags, counts, tagChips }) {
+function ChipFilters({
+  addedByFilter,
+  setAddedByFilter,
+  selectedTags,
+  setSelectedTags,
+  counts,
+  tagChips,
+  tagsExpanded,
+  setTagsExpanded
+}) {
   function toggleTag(tag) {
     setSelectedTags(selectedTags.includes(tag) ? selectedTags.filter((item) => item !== tag) : [...selectedTags, tag]);
   }
 
+  const selectedTagChips = tagChips.filter((tag) => selectedTags.includes(tag));
+  const unselectedTagChips = tagChips.filter((tag) => !selectedTags.includes(tag));
+  const collapsedTagChips = [
+    ...selectedTagChips,
+    ...unselectedTagChips.slice(0, Math.max(0, 4 - selectedTagChips.length))
+  ];
+  const visibleTagChips = tagsExpanded ? [...selectedTagChips, ...unselectedTagChips] : collapsedTagChips;
+  const hiddenTagCount = tagChips.length - visibleTagChips.length;
+
   return (
-    <div className="chip-row" aria-label="快速筛选">
-      <FilterChip active={addedByFilter === "all"} onClick={() => setAddedByFilter("all")}>
-        全部<span className="chip-count">{counts.all}</span>
-      </FilterChip>
-      <FilterChip active={addedByFilter === "xiaowang"} onClick={() => setAddedByFilter("xiaowang")}>
-        小王<span className="chip-count">{counts.xiaowang}</span>
-      </FilterChip>
-      <FilterChip active={addedByFilter === "xiaozhang"} onClick={() => setAddedByFilter("xiaozhang")}>
-        小张<span className="chip-count">{counts.xiaozhang}</span>
-      </FilterChip>
-      {tagChips.map((tag) => (
-        <FilterChip key={tag} active={selectedTags.includes(tag)} onClick={() => toggleTag(tag)}>
-          {tag}
+    <div className="filter-stack" aria-label="快速筛选">
+      <div className="filter-row" aria-label="添加人筛选">
+        <FilterChip active={addedByFilter === "all"} onClick={() => setAddedByFilter("all")}>
+          全部<span className="chip-count">{counts.all}</span>
         </FilterChip>
-      ))}
+        <FilterChip active={addedByFilter === "xiaowang"} onClick={() => setAddedByFilter("xiaowang")}>
+          小王<span className="chip-count">{counts.xiaowang}</span>
+        </FilterChip>
+        <FilterChip active={addedByFilter === "xiaozhang"} onClick={() => setAddedByFilter("xiaozhang")}>
+          小张<span className="chip-count">{counts.xiaozhang}</span>
+        </FilterChip>
+      </div>
+      {tagChips.length ? (
+        <div className="tag-filter-row" aria-label="标签筛选">
+          {visibleTagChips.map((tag) => (
+            <FilterChip key={tag} active={selectedTags.includes(tag)} onClick={() => toggleTag(tag)}>
+              {tag}
+            </FilterChip>
+          ))}
+          {(hiddenTagCount > 0 || tagsExpanded) && (
+            <button
+              className="filter-more"
+              type="button"
+              aria-expanded={tagsExpanded}
+              onClick={() => setTagsExpanded(!tagsExpanded)}
+            >
+              {tagsExpanded ? "收起" : `更多 ${hiddenTagCount}`}
+            </button>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -910,7 +956,7 @@ function FeatureCard(props) {
   const [imageFailed, setImageFailed] = useState(false);
   const key = `${type}:${item.id}`;
   const location = itemLocation(state, type, item);
-  const featureTag = item.featureTag || item.tagNames?.[0] || "最近收藏";
+  const featureTag = item.featureTag || item.tagNames?.[0] || (type === "store" ? "店铺" : "菜品");
   const metaTag = (item.tagNames || []).find((tag) => tag !== featureTag) || "";
   const meta = [location, item.category, metaTag].filter(Boolean).join(" · ");
 
@@ -1792,7 +1838,7 @@ function sortValue(item, key) {
   return item[key] || item.updatedAt || item.createdAt || "";
 }
 
-function topTagNames(entries, limit) {
+function tagNamesByFrequency(entries) {
   const freq = new Map();
   for (const { item } of entries) {
     for (const tag of item.tagNames || []) {
@@ -1801,7 +1847,6 @@ function topTagNames(entries, limit) {
   }
   return [...freq.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, limit)
     .map(([name]) => name);
 }
 
