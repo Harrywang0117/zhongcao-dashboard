@@ -122,10 +122,16 @@ test("calendar date buttons have descriptive accessible names", () => {
   assert.match(appSource, /已有计划/);
 });
 
-test("wishlist tag filtering uses a quick chip row driven by real tags", () => {
+test("wishlist tag filtering exposes all used tags with compact expansion", () => {
   assert.match(appSource, /ChipFilters/);
-  assert.match(appSource, /topTagNames/);
+  assert.match(appSource, /tagNamesByFrequency/);
+  assert.doesNotMatch(appSource, /topTagNames\(base,\s*4\)/);
+  assert.match(appSource, /collapsedTagChips/);
+  assert.match(appSource, /更多 \$\{hiddenTagCount\}/);
+  assert.match(appSource, /aria-label="标签筛选"/);
   assert.match(appSource, /filter-chip/);
+  assert.match(stylesSource, /\.filter-stack/);
+  assert.match(stylesSource, /\.filter-more/);
   assert.match(appSource, /filterByTags/);
   assert.match(appSource, /setSelectedTags\(selectedTags\.includes\(tag\)/);
 });
@@ -148,6 +154,17 @@ test("wishlist keeps a single feature card plus compact place cards", () => {
   assert.match(stylesSource, /\.place-card/);
 });
 
+test("wishlist sorting copy matches the active timestamp", () => {
+  const sortHeadingIndex = appSource.indexOf("{sortHeading}</h2>");
+  const featureCardIndex = appSource.indexOf("<FeatureCard type={featured.type}");
+
+  assert.match(appSource, /useState\("createdAt"\)/);
+  assert.match(appSource, /sortBy === "createdAt" \? "最近收藏" : "最近更新"/);
+  assert.match(appSource, /当前按\$\{sortLabel\}排序，切换到\$\{nextSortLabel\}/);
+  assert.match(appSource, /type === "store" \? "店铺" : "菜品"/);
+  assert.ok(sortHeadingIndex >= 0 && sortHeadingIndex < featureCardIndex);
+});
+
 test("store and dish edit forms can correct added-by", () => {
   assert.match(appSource, /name="addedBy"/);
   assert.match(appSource, /EDITABLE_ADDED_BY_OPTIONS/);
@@ -165,10 +182,17 @@ test("dense tag displays are compressed in cards and grouped in profile", () => 
 });
 
 test("toast announces status changes and keeps undo visible longer", () => {
+  const toastAnimation = stylesSource.slice(
+    stylesSource.indexOf("@keyframes zc-toast"),
+    stylesSource.indexOf("@keyframes zc-drawer")
+  );
+
   assert.match(appSource, /role="status"/);
   assert.match(appSource, /aria-live="polite"/);
   assert.match(appSource, /undoPayload \? 7000 : 2400/);
   assert.match(appSource, /onUndo/);
+  assert.match(toastAnimation, /transform:\s*translateY\(10px\)/);
+  assert.doesNotMatch(toastAnimation, /translate\(-50%/);
 });
 
 test("reduced motion is respected", () => {
