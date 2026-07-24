@@ -1,4 +1,4 @@
-FROM node:22-alpine AS build
+FROM node:22-bookworm-slim AS build
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -9,13 +9,13 @@ COPY public ./public
 COPY src ./src
 RUN npm run build
 
-FROM node:22-alpine AS runtime-dependencies
+FROM node:22-bookworm-slim AS runtime-dependencies
 
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-FROM node:22-alpine AS runtime
+FROM node:22-bookworm-slim AS runtime
 
 ARG APP_UID=10001
 ARG APP_GID=10001
@@ -24,8 +24,12 @@ ENV HOST=0.0.0.0
 ENV PORT=4173
 ENV DATA_DIR=/data
 
-RUN addgroup -S -g "${APP_GID}" app \
-  && adduser -S -D -H -u "${APP_UID}" -G app app
+RUN groupadd --gid "${APP_GID}" app \
+  && useradd --uid "${APP_UID}" \
+    --gid app \
+    --no-create-home \
+    --shell /usr/sbin/nologin \
+    app
 
 WORKDIR /app
 COPY --from=runtime-dependencies --chown=app:app /app/node_modules ./node_modules
