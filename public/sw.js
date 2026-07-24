@@ -26,7 +26,8 @@ self.addEventListener("fetch", (event) => {
     event.request.method !== "GET" ||
     requestUrl.origin !== self.location.origin ||
     requestUrl.pathname.startsWith("/api/") ||
-    requestUrl.pathname === "/healthz"
+    requestUrl.pathname === "/healthz" ||
+    requestUrl.pathname === "/readyz"
   ) {
     return;
   }

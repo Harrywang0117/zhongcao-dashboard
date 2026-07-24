@@ -41,7 +41,13 @@ import {
   updateStore
 } from "./lib/domain.js";
 import { buildPreviewFromUrl, platformInitial } from "./lib/link-preview.js";
-import { createStateBackup, loadState, saveState } from "./lib/storage.js";
+import {
+  StateConflictError,
+  createStateBackup,
+  loadState,
+  saveState,
+  saveStateMutation
+} from "./lib/storage.js";
 import { createDemoState, isDemoMode } from "./lib/demo-data.js";
 import { Mascot } from "./components/Mascot.jsx";
 import {
@@ -98,6 +104,7 @@ const LAST_ADDED_BY_KEY = "zhongcao-last-added-by";
 
 export default function App() {
   const [state, setState] = useState(null);
+  const [loadError, setLoadError] = useState("");
   const [tab, setTab] = useState("inbox");
   const [query, setQuery] = useState("");
   const [selectedTags, setSelectedTags] = useState([]);
@@ -114,16 +121,25 @@ export default function App() {
   const [rescheduleDates, setRescheduleDates] = useState({});
   const toastTimer = useRef(0);
   const demoMode = useRef(isDemoMode());
+  const stateRef = useRef(null);
+  const stateWriteQueue = useRef(Promise.resolve());
 
   useEffect(() => {
     let mounted = true;
     if (demoMode.current) {
       // Preview-only: keep demo content purely in memory, never persisted.
       setTab("wishlist");
-      setState(createDemoState());
+      const demoState = createDemoState();
+      stateRef.current = demoState;
+      setState(demoState);
     } else {
       loadState().then((loaded) => {
-        if (mounted) setState(loaded);
+        if (mounted) {
+          stateRef.current = loaded;
+          setState(loaded);
+        }
+      }).catch((error) => {
+        if (mounted) setLoadError(error.message || "共享数据加载失败");
       });
       registerServiceWorker();
     }
@@ -158,21 +174,41 @@ export default function App() {
 
   async function persist(nextState, message = "", undoPayload = null) {
     const saved = demoMode.current ? nextState : await saveState(nextState);
+    stateRef.current = saved;
     setState(saved);
     if (message) showToast(message, undoPayload);
     return saved;
   }
 
-  async function mutate(mutator, message = "", undoPayload = null) {
-    try {
-      const nextState = structuredClone(state);
-      const result = mutator(nextState);
-      await persist(nextState, message, undoPayload);
-      return result;
-    } catch (error) {
+  function mutate(mutator, message = "", undoPayload = null) {
+    const adoptRemoteState = (latestState) => {
+      stateRef.current = latestState;
+      setState(latestState);
+    };
+    const operation = async () => {
+      try {
+        const saved = await saveStateMutation(stateRef.current, mutator, {
+          saveImpl: (nextState) => persist(nextState, message, undoPayload),
+          onConflict: adoptRemoteState
+        });
+        return saved.result;
+      } catch (error) {
+        if (error instanceof StateConflictError) {
+          throw new Error("共享数据持续被其他设备更新，请刷新后重试");
+        }
+        throw error;
+      }
+    };
+
+    const pending = stateWriteQueue.current.then(operation, operation);
+    stateWriteQueue.current = pending.then(
+      () => undefined,
+      () => undefined
+    );
+    return pending.catch((error) => {
       showToast(error.message);
       return null;
-    }
+    });
   }
 
   async function requestLinkPreview(url) {
@@ -231,35 +267,30 @@ export default function App() {
 
   async function uploadInboxCover(id, file) {
     const stored = await uploadCoverFile(file);
-    const nextState = structuredClone(state);
-    const item = nextState.inboxItems.find((candidate) => candidate.id === id);
-    if (!item || item.deletedAt || item.triageStatus === "organized") {
-      throw new Error("这条线索已经不存在或已整理");
-    }
-    item.previewImageUrl = stored.imageUrl;
-    item.imageStatus = "stored";
-    item.imageSource = "manual";
-    item.imageFailureCode = "";
-    item.imageFailureReason = "";
-    item.updatedAt = new Date().toISOString();
-    await persist(nextState, "封面已保存");
-    return stored;
+    return await mutate((nextState) => {
+      const item = nextState.inboxItems.find((candidate) => candidate.id === id);
+      if (!item || item.deletedAt || item.triageStatus === "organized") {
+        throw new Error("这条线索已经不存在或已整理");
+      }
+      item.previewImageUrl = stored.imageUrl;
+      item.imageStatus = "stored";
+      item.imageSource = "manual";
+      item.imageFailureCode = "";
+      item.imageFailureReason = "";
+      item.updatedAt = new Date().toISOString();
+      return stored;
+    }, "封面已保存");
   }
 
   async function savePreviewToInbox(preview, values) {
     const fallbackTitle = String(values.fallbackTitle || "").trim();
     const addedBy = String(values.addedBy || "").trim();
-    const duplicate = findDuplicateSource(state, preview.normalizedUrl, preview.sourceKey);
+    const duplicate = findDuplicateSource(stateRef.current, preview.normalizedUrl, preview.sourceKey);
     if (duplicate) {
       showToast(duplicate.collection === "stores" ? "这条链接已经在店铺来源里" : "这条链接已经保存过了");
       return false;
     }
 
-    const nextState = structuredClone(state);
-    const item = createInboxItem({ preview, fallbackTitle, note: values.note || "", addedBy });
-    nextState.inboxItems.unshift(item);
-    rememberLastAddedBy(addedBy);
-    setQuickDraft(createEmptyQuickSaveDraft());
     const message = preview.status === "success"
       ? !preview.imageUrl
         ? "已保存文字，封面可稍后补充"
@@ -267,7 +298,31 @@ export default function App() {
       : fallbackTitle
         ? "已补充关键信息并保存"
         : "已保存为待整理链接";
-    await persist(nextState, message);
+    const saved = await mutate((nextState) => {
+      const currentDuplicate = findDuplicateSource(
+        nextState,
+        preview.normalizedUrl,
+        preview.sourceKey
+      );
+      if (currentDuplicate) {
+        throw new Error(
+          currentDuplicate.collection === "stores"
+            ? "这条链接已经在店铺来源里"
+            : "这条链接已经保存过了"
+        );
+      }
+      const item = createInboxItem({
+        preview,
+        fallbackTitle,
+        note: values.note || "",
+        addedBy
+      });
+      nextState.inboxItems.unshift(item);
+      return true;
+    }, message);
+    if (!saved) return false;
+    rememberLastAddedBy(addedBy);
+    setQuickDraft(createEmptyQuickSaveDraft());
     return true;
   }
 
@@ -322,19 +377,25 @@ export default function App() {
     const storeName = String(values.storeName || "").trim();
     const businessDistrict = String(values.businessDistrict || "").trim();
 
-    try {
-      const nextState = structuredClone(state);
-      if (template.includes("store") && storeName) {
-        const duplicate = findPotentialDuplicateStores(nextState, storeName, businessDistrict)[0];
-        if (duplicate && window.confirm(`发现疑似重复店铺「${duplicate.name}」，要合并来源吗？`)) {
-          mergeInboxItemIntoStore(nextState, id, duplicate.id, {
-            dishName: template === "store-dish" ? values.dishName : "",
-            tagNames,
-            note: values.note || ""
-          });
-          await persist(nextState, "已合并到已有店铺");
-          return;
+    const duplicate = template.includes("store") && storeName
+      ? findPotentialDuplicateStores(stateRef.current, storeName, businessDistrict)[0]
+      : null;
+    const shouldMerge = Boolean(
+      duplicate && window.confirm(`发现疑似重复店铺「${duplicate.name}」，要合并来源吗？`)
+    );
+
+    await mutate((nextState) => {
+      if (shouldMerge) {
+        const currentDuplicate = nextState.stores.find((store) => store.id === duplicate.id);
+        if (!currentDuplicate) {
+          throw new Error("目标店铺已被其他设备修改，请重新整理");
         }
+        mergeInboxItemIntoStore(nextState, id, duplicate.id, {
+          dishName: template === "store-dish" ? values.dishName : "",
+          tagNames,
+          note: values.note || ""
+        });
+        return;
       }
 
       organizeInboxItem(nextState, id, {
@@ -347,10 +408,11 @@ export default function App() {
         tagNames,
         note: values.note
       });
-      await persist(nextState, template === "hold" ? "已暂留线索" : "已整理完成");
-    } catch (error) {
-      showToast(error.message);
-    }
+    }, shouldMerge
+      ? "已合并到已有店铺"
+      : template === "hold"
+        ? "已暂留线索"
+        : "已整理完成");
   }
 
   async function reparseInboxItem(id) {
@@ -424,6 +486,9 @@ export default function App() {
   }
 
   async function clearLocalData() {
+    if (!window.confirm("确认清空共享收藏库？此操作会影响所有设备，当前版本不能自行恢复。")) {
+      return;
+    }
     setTab("inbox");
     setQuery("");
     setSelectedTags([]);
@@ -437,7 +502,11 @@ export default function App() {
     setPlanDates({});
     setVisitDates({});
     setRescheduleDates({});
-    await persist(createInitialState(), "本地数据已清空");
+    await mutate((nextState) => {
+      const emptyState = createInitialState();
+      for (const key of Object.keys(nextState)) delete nextState[key];
+      Object.assign(nextState, emptyState);
+    }, "共享数据已清空");
   }
 
   function exportLocalData() {
@@ -453,7 +522,7 @@ export default function App() {
       link.click();
       link.remove();
       URL.revokeObjectURL(blobUrl);
-      showToast("本地数据备份已导出");
+      showToast("共享数据备份已导出");
     } catch (error) {
       showToast(error.message || "导出失败");
     }
@@ -463,7 +532,12 @@ export default function App() {
     return (
       <main className="loading-screen">
         <span className="brand-mark h-14 w-14 animate-pulse font-display text-2xl">种</span>
-        <p>正在打开种草收件箱...</p>
+        <p>{loadError || "正在打开共享种草收件箱..."}</p>
+        {loadError ? (
+          <button className="secondary-button" type="button" onClick={() => window.location.reload()}>
+            重新加载
+          </button>
+        ) : null}
       </main>
     );
   }
@@ -1487,17 +1561,17 @@ function ProfileScreen({ state, mutate, exportLocalData, clearLocalData }) {
       </section>
 
       <section className="panel">
-        <h2 className="font-display text-2xl text-zinc-950">本地数据</h2>
+        <h2 className="font-display text-2xl text-zinc-950">共享数据</h2>
         <p className="text-[15px] font-medium text-zinc-600">数据版本：v{state.meta.dataVersion}</p>
         <p className="text-[15px] font-medium text-zinc-600">当前支持固定添加人：小王 / 小张；历史数据会显示为未标记。</p>
-        <p className="text-[15px] font-medium text-zinc-600">收藏数据保存在当前浏览器的 IndexedDB 中，可先导出 JSON 备份供后续迁移。</p>
+        <p className="text-[15px] font-medium text-zinc-600">收藏数据保存在 PostgreSQL 共享库中，两台设备会读取同一套内容。</p>
         <button className="secondary-button w-fit" type="button" onClick={exportLocalData}>导出 JSON 备份</button>
       </section>
 
       <section className="panel danger-zone">
         <h2 className="font-display text-2xl text-zinc-950">危险操作</h2>
-        <p className="text-[15px] font-medium text-zinc-600">清空后只能靠已导出的 JSON 备份恢复，操作前请先导出。</p>
-        <button className="danger-button" type="button" onClick={clearLocalData}>清空本地数据</button>
+        <p className="text-[15px] font-medium text-zinc-600">清空会影响所有设备；当前版本不能自行导入 JSON 恢复，操作前请先导出留档。</p>
+        <button className="danger-button" type="button" onClick={clearLocalData}>清空共享数据</button>
       </section>
     </>
   );
@@ -1916,7 +1990,7 @@ function rememberLastAddedBy(value) {
   try {
     window.localStorage.setItem(LAST_ADDED_BY_KEY, value);
   } catch {
-    // Keeping this preference is optional; saving the item itself is still handled by IndexedDB.
+    // Keeping this per-browser UI preference is optional; shared data is saved through the API.
   }
 }
 

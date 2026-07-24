@@ -26,7 +26,8 @@ test("Tailwind is the app styling layer", () => {
 
 test("server serves the built React app from the shared source modules", () => {
   assert.match(packageSource, /"build":\s*"vite build"/);
-  assert.match(packageSource, /"start":\s*"npm run build && node server\.mjs"/);
+  assert.match(packageSource, /"start":\s*"node server\.mjs"/);
+  assert.match(packageSource, /"db:migrate":\s*"node server\/migrate\.mjs"/);
   assert.match(serverSource, /new URL\("\.\/dist\/", import\.meta\.url\)/);
   assert.match(serverSource, /from "\.\/src\/lib\/link-preview\.js"/);
   assert.match(serverSource, /POST" && requestUrl\.pathname === "\/api\/link-preview"/);
@@ -87,7 +88,10 @@ test("quick save writes a required local added-by value", () => {
   assert.match(appSource, /ACTIVE_ADDED_BY_OPTIONS/);
   assert.match(appSource, /zhongcao-last-added-by/);
   assert.match(appSource, /请选择添加人/);
-  assert.match(appSource, /createInboxItem\(\{ preview, fallbackTitle, note: values\.note \|\| "", addedBy \}\)/);
+  assert.match(
+    appSource,
+    /createInboxItem\(\{\s*preview,\s*fallbackTitle,\s*note: values\.note \|\| "",\s*addedBy\s*\}\)/
+  );
 });
 
 test("runtime UI state is controlled by React state", () => {
@@ -203,6 +207,7 @@ test("service worker caches only same-origin static GET requests", () => {
   assert.match(serviceWorkerSource, /requestUrl\.origin !== self\.location\.origin/);
   assert.match(serviceWorkerSource, /requestUrl\.pathname\.startsWith\("\/api\/"\)/);
   assert.match(serviceWorkerSource, /requestUrl\.pathname === "\/healthz"/);
+  assert.match(serviceWorkerSource, /requestUrl\.pathname === "\/readyz"/);
   assert.match(serviceWorkerSource, /if \(response\.ok\)/);
   assert.match(serviceWorkerSource, /event\.request\.mode === "navigate"/);
 });
@@ -212,4 +217,5 @@ test("profile can download a migration-ready local data backup", () => {
   assert.match(appSource, /new Blob\(\[backup\.content\]/);
   assert.match(appSource, /link\.download = backup\.filename/);
   assert.match(appSource, /导出 JSON 备份/);
+  assert.match(appSource, /window\.confirm\("确认清空共享收藏库/);
 });
