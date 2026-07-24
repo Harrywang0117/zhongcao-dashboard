@@ -42,7 +42,12 @@ test("container deployment is non-root, persistent, and has no host port mapping
     "utf8"
   );
 
-  assert.match(dockerfile, /^FROM node:22-alpine AS build$/m);
+  assert.match(dockerfile, /^FROM node:22-bookworm-slim AS build$/m);
+  assert.match(dockerfile, /^FROM node:22-bookworm-slim AS runtime-dependencies$/m);
+  assert.match(dockerfile, /^FROM node:22-bookworm-slim AS runtime$/m);
+  assert.doesNotMatch(dockerfile, /^FROM node:22-alpine/m);
+  assert.match(dockerfile, /groupadd --gid "\$\{APP_GID\}" app/);
+  assert.match(dockerfile, /useradd --uid "\$\{APP_UID\}"/);
   assert.match(dockerfile, /^USER app$/m);
   assert.match(dockerfile, /\/readyz/);
   assert.match(compose, /external: true/);
