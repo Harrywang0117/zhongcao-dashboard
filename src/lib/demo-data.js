@@ -2,10 +2,10 @@ import { createInitialState, createId } from "./domain.js";
 
 /*
   In-memory preview seed. Only used when the app is opened with a
-  `?demo` query flag, and it is NEVER written back to IndexedDB
+  `?demo` query flag, and it is NEVER written to the shared API
   (App keeps demo state purely in React memory). This exists so the
   redesign can be reviewed with representative content without
-  polluting real local-first storage. Not a production fixture.
+  polluting production data. Not a production fixture.
 */
 
 const DAY = 86400000;

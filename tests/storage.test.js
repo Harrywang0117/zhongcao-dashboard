@@ -1,8 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DATA_VERSION } from "../src/lib/domain.js";
-import { createStateBackup, migrateState } from "../src/lib/storage.js";
+import { DATA_VERSION, createInitialState } from "../src/lib/domain.js";
+import {
+  StateConflictError,
+  createStateBackup,
+  loadState,
+  migrateState,
+  saveState,
+  saveStateMutation
+} from "../src/lib/storage.js";
 
 test("creates a versioned JSON backup for later server migration", () => {
   const state = migrateState({
@@ -137,4 +144,148 @@ test("migrates invalid added by values to unknown", () => {
   assert.equal(state.stores[0].addedBy, "unknown");
   assert.equal(state.stores[0].sourceLinks[0].addedBy, "unknown");
   assert.equal(state.dishes[0].addedBy, "unknown");
+});
+
+test("loads and saves shared state with an expected revision", async () => {
+  const initial = createInitialState();
+  const requests = [];
+  const loaded = await loadState({
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return Response.json({ state: initial, revision: 3 });
+    }
+  });
+
+  loaded.inboxItems.push({ id: "inbox_1", title: "共享火锅", addedBy: "xiaowang" });
+  const saved = await saveState(loaded, {
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      const body = JSON.parse(options.body);
+      assert.equal(body.expectedRevision, 3);
+      return Response.json({ state: body.state, revision: 4 });
+    }
+  });
+
+  assert.equal(requests[0].url, "/api/state");
+  assert.equal(requests[0].options.method, "GET");
+  assert.equal(requests[1].options.method, "PUT");
+  assert.equal(saved.inboxItems[0].title, "共享火锅");
+});
+
+test("exposes the latest state when a revision conflict occurs", async () => {
+  const initial = createInitialState();
+  await loadState({
+    fetchImpl: async () => Response.json({ state: initial, revision: 8 })
+  });
+
+  const latest = createInitialState();
+  latest.stores.push({ id: "store_1", name: "另一台设备新增", addedBy: "xiaozhang" });
+
+  await assert.rejects(
+    saveState(initial, {
+      fetchImpl: async () => Response.json({
+        error: "revision_conflict",
+        state: latest,
+        revision: 9
+      }, { status: 409 })
+    }),
+    (error) => {
+      assert.equal(error instanceof StateConflictError, true);
+      assert.equal(error.revision, 9);
+      assert.equal(error.latestState.stores[0].name, "另一台设备新增");
+      return true;
+    }
+  );
+});
+
+test("replays one mutation on the latest state after a revision conflict", async () => {
+  const base = createInitialState();
+  const latest = createInitialState();
+  latest.stores.push({ id: "store_remote", name: "远端店铺", addedBy: "xiaozhang" });
+  let saveCalls = 0;
+  const conflicts = [];
+
+  const saved = await saveStateMutation(
+    base,
+    (state) => {
+      state.inboxItems.push({ id: "inbox_local", title: "本地操作", addedBy: "xiaowang" });
+      return "saved";
+    },
+    {
+      saveImpl: async (state) => {
+        saveCalls += 1;
+        if (saveCalls === 1) throw new StateConflictError(latest, 1);
+        return state;
+      },
+      onConflict: (state, revision) => conflicts.push({ state, revision })
+    }
+  );
+
+  assert.equal(saveCalls, 2);
+  assert.equal(conflicts.length, 1);
+  assert.equal(conflicts[0].state.stores[0].name, "远端店铺");
+  assert.equal(conflicts[0].revision, 1);
+  assert.equal(saved.replayed, true);
+  assert.equal(saved.result, "saved");
+  assert.equal(saved.state.stores[0].name, "远端店铺");
+  assert.equal(saved.state.inboxItems[0].title, "本地操作");
+});
+
+test("does not retry a mutation more than once", async () => {
+  const base = createInitialState();
+  let saveCalls = 0;
+  const conflicts = [];
+
+  await assert.rejects(
+    saveStateMutation(
+      base,
+      (state) => {
+        state.tags.push({ id: "tag_test", name: "测试", group: "custom" });
+      },
+      {
+        saveImpl: async () => {
+          saveCalls += 1;
+          const latest = createInitialState();
+          latest.meta.updatedAt = `2026-07-23T00:00:0${saveCalls}.000Z`;
+          throw new StateConflictError(latest, saveCalls);
+        },
+        onConflict: (state, revision) => conflicts.push({ state, revision })
+      }
+    ),
+    StateConflictError
+  );
+
+  assert.equal(saveCalls, 2);
+  assert.deepEqual(conflicts.map(({ revision }) => revision), [1, 2]);
+  assert.equal(conflicts[1].state.meta.updatedAt, "2026-07-23T00:00:02.000Z");
+});
+
+test("adopts the latest state before a replay mutation fails", async () => {
+  const base = createInitialState();
+  base.stores.push({ id: "store_deleted_remotely", name: "旧店铺", addedBy: "xiaowang" });
+  const latest = createInitialState();
+  let adopted = null;
+
+  await assert.rejects(
+    saveStateMutation(
+      base,
+      (state) => {
+        const store = state.stores.find(({ id }) => id === "store_deleted_remotely");
+        if (!store) throw new Error("目标店铺已被其他设备删除");
+        store.name = "本地改名";
+      },
+      {
+        saveImpl: async () => {
+          throw new StateConflictError(latest, 5);
+        },
+        onConflict: (state, revision) => {
+          adopted = { state, revision };
+        }
+      }
+    ),
+    /目标店铺已被其他设备删除/
+  );
+
+  assert.equal(adopted.revision, 5);
+  assert.equal(adopted.state.stores.length, 0);
 });

@@ -9,6 +9,7 @@ import {
   supportsMetadataFetch
 } from "./src/lib/link-preview.js";
 import { readServerConfig } from "./server/config.mjs";
+import { createDatabasePool } from "./server/database.mjs";
 import {
   CoverStoreError,
   MAX_COVER_BYTES,
@@ -16,8 +17,31 @@ import {
   readStoredCover,
   storeCoverBytes
 } from "./server/cover-store.mjs";
+import {
+  StateConflictError,
+  StateRepositoryError,
+  createStateRepository
+} from "./server/state-repository.mjs";
+import {
+  MAX_STATE_BYTES,
+  StatePayloadError,
+  normalizeStoredState,
+  validateExpectedRevision,
+  validateStateDocument
+} from "./server/state-validation.mjs";
 
-const { host: HOST, port: PORT, dataDir: DATA_DIR } = readServerConfig();
+const {
+  host: HOST,
+  port: PORT,
+  dataDir: DATA_DIR,
+  databaseUrl: DATABASE_URL,
+  databasePoolMax: DATABASE_POOL_MAX
+} = readServerConfig();
+const DATABASE_POOL = createDatabasePool({
+  connectionString: DATABASE_URL,
+  max: DATABASE_POOL_MAX
+});
+const DEFAULT_STATE_REPOSITORY = createStateRepository(DATABASE_POOL);
 const BUILD_DIR = new URL("./dist/", import.meta.url);
 const PUBLIC_ASSET_DIR = new URL("./public/", import.meta.url);
 const MIME_TYPES = {
@@ -41,13 +65,29 @@ let activePreviewFetches = 0;
 export function createRequestHandler({
   dataDir = DATA_DIR,
   fetchImpl = globalThis.fetch,
-  coverLookupImpl
+  coverLookupImpl,
+  stateRepository = DEFAULT_STATE_REPOSITORY
 } = {}) {
   return async function requestHandler(request, response) {
     const requestUrl = new URL(request.url, `http://${request.headers.host}`);
 
     if (request.method === "GET" && requestUrl.pathname === "/healthz") {
       sendJson(response, 200, { status: "ok" });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/readyz") {
+      await handleReadiness(response, { stateRepository });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/state") {
+      await handleStateRead(response, { stateRepository });
+      return;
+    }
+
+    if (request.method === "PUT" && requestUrl.pathname === "/api/state") {
+      await handleStateWrite(request, response, { stateRepository });
       return;
     }
 
@@ -87,6 +127,126 @@ if (isDirectRun()) {
   server.listen(PORT, HOST, () => {
     console.log(`种草软件已启动：http://${HOST}:${PORT}`);
   });
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
+}
+
+async function handleReadiness(response, { stateRepository }) {
+  if (!stateRepository) {
+    sendJson(response, 503, { status: "not_ready", reason: "database_not_configured" });
+    return;
+  }
+
+  const readiness = await stateRepository.checkReady();
+  sendJson(
+    response,
+    readiness.ready ? 200 : 503,
+    readiness.ready
+      ? { status: "ready" }
+      : { status: "not_ready", reason: readiness.reason }
+  );
+}
+
+async function handleStateRead(response, { stateRepository }) {
+  if (!stateRepository) {
+    sendJson(response, 503, {
+      error: "database_not_configured",
+      message: "共享数据库尚未配置"
+    });
+    return;
+  }
+
+  try {
+    const stored = await stateRepository.getState();
+    sendJson(response, 200, {
+      state: normalizeRepositoryState(stored.state),
+      revision: stored.revision,
+      updatedAt: stored.updatedAt
+    });
+  } catch (error) {
+    sendStateError(response, error);
+  }
+}
+
+async function handleStateWrite(request, response, { stateRepository }) {
+  if (!stateRepository) {
+    sendJson(response, 503, {
+      error: "database_not_configured",
+      message: "共享数据库尚未配置"
+    });
+    return;
+  }
+
+  try {
+    let body;
+    try {
+      body = await readJson(request, MAX_STATE_BYTES + 64 * 1024);
+    } catch (error) {
+      throw new StatePayloadError(
+        error.message === "请求过大" ? "state_too_large" : "invalid_json",
+        error.message
+      );
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new StatePayloadError("invalid_request", "请求 JSON 必须是对象");
+    }
+    const state = validateStateDocument(body.state);
+    const expectedRevision = validateExpectedRevision(body.expectedRevision);
+    const stored = await stateRepository.putState({ state, expectedRevision });
+    sendJson(response, 200, {
+      state: normalizeRepositoryState(stored.state),
+      revision: stored.revision,
+      updatedAt: stored.updatedAt
+    });
+  } catch (error) {
+    sendStateError(response, error);
+  }
+}
+
+function sendStateError(response, error) {
+  if (error instanceof StateConflictError) {
+    let latestState;
+    try {
+      latestState = normalizeRepositoryState(error.latest.state);
+    } catch (normalizationError) {
+      sendStateError(response, normalizationError);
+      return;
+    }
+    sendJson(response, 409, {
+      error: "revision_conflict",
+      message: error.message,
+      state: latestState,
+      revision: error.latest.revision,
+      updatedAt: error.latest.updatedAt
+    });
+    return;
+  }
+  if (error instanceof StatePayloadError) {
+    sendJson(response, error.code === "state_too_large" ? 413 : 400, {
+      error: error.code,
+      message: error.message
+    });
+    return;
+  }
+  if (error instanceof StateRepositoryError) {
+    sendJson(response, 503, { error: error.code, message: error.message });
+    return;
+  }
+  sendJson(response, 503, {
+    error: "database_unavailable",
+    message: "共享数据库暂时不可用"
+  });
+}
+
+function normalizeRepositoryState(value) {
+  try {
+    return normalizeStoredState(value);
+  } catch (error) {
+    if (error instanceof StatePayloadError) {
+      throw new StateRepositoryError("invalid_stored_state", error.message);
+    }
+    throw error;
+  }
 }
 
 async function handleLinkPreview(request, response, { dataDir, fetchImpl, coverLookupImpl }) {
@@ -503,17 +663,24 @@ function isInsideDirectory(fileUrl, directoryUrl) {
   return pathToFileURL(filePath).href.startsWith(pathToFileURL(publicPath).href);
 }
 
-function readJson(request) {
+function readJson(request, maxBytes = 128 * 1024) {
   return new Promise((resolve, reject) => {
     let raw = "";
+    let total = 0;
+    let tooLarge = false;
     request.on("data", (chunk) => {
-      raw += chunk;
-      if (raw.length > 128 * 1024) {
+      if (tooLarge) return;
+      total += Buffer.byteLength(chunk);
+      if (total > maxBytes) {
+        tooLarge = true;
+        raw = "";
         reject(new Error("请求过大"));
-        request.destroy();
+        return;
       }
+      raw += chunk;
     });
     request.on("end", () => {
+      if (tooLarge) return;
       try {
         resolve(raw ? JSON.parse(raw) : {});
       } catch {
@@ -579,6 +746,12 @@ function sendJson(response, statusCode, payload) {
 
 function isDirectRun() {
   return process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+}
+
+function shutdown() {
+  server.close(async () => {
+    if (DATABASE_POOL) await DATABASE_POOL.end();
+  });
 }
 
 export { serveStatic, server };

@@ -4,11 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "start": "npm run build && node server.mjs",
+    "start": "node server.mjs",
+    "db:migrate": "node server/migrate.mjs",
     "test": "node --test"
   },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "dependencies": {
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
     "@vitejs/plugin-react": "^6.0.2",
     "lucide-react": "^1.17.0",

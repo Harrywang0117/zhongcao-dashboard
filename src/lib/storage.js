@@ -1,22 +1,105 @@
 import { DATA_VERSION, DEFAULT_TAGS, createInitialState, normalizeAddedBy } from "./domain.js";
 
-const DB_NAME = "zhongcao-db";
-const DB_VERSION = 1;
-const STORE_NAME = "kv";
-const STATE_KEY = "app-state";
-const LOCAL_STORAGE_KEY = "zhongcao-app-state";
 const BACKUP_FORMAT = "zhongcao-state-backup";
 const BACKUP_VERSION = 1;
+let currentRevision = null;
 
-export async function loadState() {
-  const stored = await readState();
-  return migrateState(stored || createInitialState());
+export class StateConflictError extends Error {
+  constructor(latestState, revision) {
+    super("共享数据已更新，正在重试本次操作");
+    this.name = "StateConflictError";
+    this.latestState = latestState;
+    this.revision = revision;
+  }
 }
 
-export async function saveState(state) {
-  const migrated = migrateState(state);
-  await writeState(migrated);
-  return migrated;
+export async function loadState({ fetchImpl = globalThis.fetch } = {}) {
+  const response = await fetchImpl("/api/state", {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    cache: "no-store"
+  });
+  const payload = await readApiPayload(response);
+  if (!response.ok) {
+    throw new Error(payload.message || "共享数据加载失败");
+  }
+
+  currentRevision = parseRevision(payload.revision);
+  return migrateState(structuredClone(payload.state || createInitialState()));
+}
+
+export async function saveState(state, { fetchImpl = globalThis.fetch } = {}) {
+  if (currentRevision === null) {
+    throw new Error("共享数据尚未加载");
+  }
+
+  const migrated = migrateState(structuredClone(state));
+  const response = await fetchImpl("/api/state", {
+    method: "PUT",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      state: migrated,
+      expectedRevision: currentRevision
+    })
+  });
+  const payload = await readApiPayload(response);
+
+  if (response.status === 409 && payload.error === "revision_conflict") {
+    currentRevision = parseRevision(payload.revision);
+    throw new StateConflictError(
+      migrateState(structuredClone(payload.state)),
+      currentRevision
+    );
+  }
+  if (!response.ok) {
+    throw new Error(payload.message || "共享数据保存失败");
+  }
+
+  currentRevision = parseRevision(payload.revision);
+  return migrateState(structuredClone(payload.state));
+}
+
+export async function saveStateMutation(
+  baseState,
+  mutator,
+  {
+    saveImpl = saveState,
+    onConflict = () => {}
+  } = {}
+) {
+  const applyMutation = (sourceState) => {
+    const nextState = structuredClone(sourceState);
+    const result = mutator(nextState);
+    return { nextState, result };
+  };
+
+  let attempt = applyMutation(baseState);
+  try {
+    return {
+      state: await saveImpl(attempt.nextState),
+      result: attempt.result,
+      replayed: false
+    };
+  } catch (error) {
+    if (!(error instanceof StateConflictError)) throw error;
+    onConflict(error.latestState, error.revision);
+    attempt = applyMutation(error.latestState);
+    try {
+      return {
+        state: await saveImpl(attempt.nextState),
+        result: attempt.result,
+        replayed: true
+      };
+    } catch (replayError) {
+      if (replayError instanceof StateConflictError) {
+        onConflict(replayError.latestState, replayError.revision);
+      }
+      throw replayError;
+    }
+  }
 }
 
 export function createStateBackup(state, exportedAt = new Date()) {
@@ -156,81 +239,17 @@ function coerceStoredAddedBy(value, fallback = "unknown") {
   }
 }
 
-async function readState() {
-  if (!("indexedDB" in window)) {
-    return readLocalStorage();
-  }
-
+async function readApiPayload(response) {
   try {
-    const db = await openDb();
-    return await getValue(db, STATE_KEY);
+    return await response.json();
   } catch {
-    return readLocalStorage();
+    throw new Error("共享数据接口返回无效");
   }
 }
 
-async function writeState(state) {
-  if (!("indexedDB" in window)) {
-    writeLocalStorage(state);
-    return;
+function parseRevision(value) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error("共享数据 revision 无效");
   }
-
-  try {
-    const db = await openDb();
-    await setValue(db, STATE_KEY, state);
-  } catch {
-    writeLocalStorage(state);
-  }
-}
-
-function readLocalStorage() {
-  try {
-    const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeLocalStorage(state) {
-  window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
-}
-
-function openDb() {
-  return new Promise((resolve, reject) => {
-    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
-    };
-
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-  });
-}
-
-function getValue(db, key) {
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readonly");
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.get(key);
-
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result || null);
-  });
-}
-
-function setValue(db, key, value) {
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readwrite");
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.put(value, key);
-
-    request.onerror = () => reject(request.error);
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-  });
+  return value;
 }

@@ -1,0 +1,37 @@
+services:
+  zhongcao-app:
+    container_name: zhongcao-app
+    image: zhongcao-app:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "4173"
+      DATA_DIR: /data
+      DATABASE_POOL_MAX: "${DATABASE_POOL_MAX:-5}"
+      DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL in .env}"
+    volumes:
+      - "${ZHONGCAO_DATA_DIR:?Set ZHONGCAO_DATA_DIR in .env}:/data"
+    expose:
+      - "4173"
+    networks:
+      - 1panel-network
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+
+networks:
+  1panel-network:
+    external: true
+    name: 1panel-network

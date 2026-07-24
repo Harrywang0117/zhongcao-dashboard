@@ -1,8 +1,10 @@
 # 种草软件 · 快照架构与登录实施方案
 
 制定日期：2026-07-15
-状态：已确认，待实施
+状态：历史方案；已被 2026-07-23 CodeX《种草软件 X86 + PostgreSQL + Cloudflare Tunnel 部署方案》取代
 前置文档：[PRD.md](../PRD.md)、[UI-REDESIGN-SPEC.md](UI-REDESIGN-SPEC.md)
+
+> 本文保留用于追溯早期决策，不再作为当前实施依据。当前阶段采用 PostgreSQL 单份 JSONB 共享状态、revision 乐观锁和显式 migration；浏览器不保留 IndexedDB 业务镜像，现有 cloudflared 独立运行，测试阶段也尚未启用应用登录或 Cloudflare Access。仓库内可执行边界以 [README.md](../README.md) 为准。
 
 ## 0. 决策背景
 
