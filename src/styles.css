@@ -880,6 +880,56 @@
     color: var(--color-accent-pressed);
   }
 
+  /* --- Calendar plan row (collapsed) ------------------------------ */
+  /* Same content-first row as .place-card, but a date chip stands in
+     for the photo — on this screen the "when" is the identity. */
+  .plan-row {
+    @apply grid items-center gap-3.5 rounded-[18px] p-1 text-left;
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    transition: background 0.16s ease;
+  }
+
+  @media (hover: hover) {
+    .plan-row:hover {
+      background: var(--color-zinc-50);
+    }
+  }
+
+  .plan-row:active {
+    background: var(--color-zinc-100);
+  }
+
+  .plan-row[aria-expanded="true"] .place-chevron {
+    transform: rotate(90deg);
+    color: var(--color-accent);
+  }
+
+  .plan-date {
+    @apply grid h-14 w-14 shrink-0 place-content-center place-items-center rounded-[16px] leading-none;
+    background: var(--color-surface-sunk);
+    color: var(--color-accent-pressed);
+  }
+
+  .plan-date strong {
+    @apply text-[17px];
+    font-family: var(--font-sans);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .plan-date em {
+    @apply mt-1 text-[11px] font-bold not-italic;
+    opacity: 0.7;
+  }
+
+  .plan-date-today {
+    background: var(--color-accent);
+    color: #fff;
+  }
+
   .feedback-badge {
     @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm;
     font-weight: 700;

@@ -80,6 +80,8 @@ const FEEDBACK_LABELS = {
   no_again: "不再去"
 };
 
+const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
 const FEEDBACK_TOAST_MESSAGES = {
   want_again: "已记录，还可以再次安排",
   ok: "已记录轻反馈",
@@ -1423,29 +1425,53 @@ function CalendarGrid({ plans, selectedPlanDate, setSelectedPlanDate }) {
 }
 
 function PlanCard({ state, plan, rescheduleDates, setRescheduleDates, updatePlan, visitTarget }) {
+  const [open, setOpen] = useState(false);
   const target = findTarget(state, plan.targetType, plan.targetId);
+  const parsed = new Date(`${plan.date}T00:00:00`);
+  const meta = [
+    plan.targetType === "store" ? "店铺" : "菜品",
+    target ? itemLocation(state, plan.targetType, target) : "",
+    relativeDayLabel(plan.date)
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <article className="item-card grid grid-cols-[104px_minmax(0,1fr)]">
-      <div className="date-block">
-        <strong className="font-display text-lg leading-tight">{formatDate(plan.date)}</strong>
-        <span className="mini-label mt-1">{plan.targetType === "store" ? "店铺" : "菜品"}</span>
-      </div>
-      <div className="grid min-w-0 gap-3 p-4">
-        <h3 className="break-words font-display text-xl text-zinc-950">{target?.name || "已删除项目"}</h3>
-        <div className="action-panel">
-          <Field label="改到">
-            <input type="date" value={rescheduleDates[plan.id] || plan.date} onChange={(event) => setRescheduleDates({ ...rescheduleDates, [plan.id]: event.target.value })} />
-          </Field>
-          <button className="secondary-button" onClick={() => updatePlan(plan, "reschedule")}>改期</button>
+    <div className="grid gap-2">
+      <button className="plan-row text-left" type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className={`plan-date${plan.date === today() ? " plan-date-today" : ""}`}>
+          <strong>{parsed.getMonth() + 1}/{parsed.getDate()}</strong>
+          <em>{WEEKDAYS[parsed.getDay()]}</em>
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate font-display text-[17px] text-zinc-950">{target?.name || "已删除项目"}</span>
+          <span className="mt-0.5 block truncate text-[13px] font-medium text-zinc-500">{meta}</span>
+        </span>
+        <span className="place-chevron" aria-hidden="true">
+          <ChevronRight size={20} strokeWidth={2.2} />
+        </span>
+      </button>
+      {open && (
+        <div className="item-card card-drawer p-4">
+          <div className="action-panel border-t-0 pt-0">
+            <Field label="改到">
+              <input type="date" value={rescheduleDates[plan.id] || plan.date} onChange={(event) => setRescheduleDates({ ...rescheduleDates, [plan.id]: event.target.value })} />
+            </Field>
+            <button className="secondary-button" onClick={() => updatePlan(plan, "reschedule")}>改期</button>
+          </div>
+          <div className="action-panel">
+            <span className="mini-label">去过了？</span>
+            <FeedbackButtons onPick={(feedback) => visitTarget(plan.targetType, plan.targetId, feedback, plan.date)} />
+          </div>
+          <div className="action-panel">
+            <div className="flex flex-wrap gap-2">
+              <button className="secondary-button flex-1 basis-24" onClick={() => updatePlan(plan, "back-to-wishlist")}>放回想去</button>
+              <button className="secondary-button flex-1 basis-24" onClick={() => updatePlan(plan, "not-interested")}>不想去了</button>
+            </div>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="secondary-button flex-1 basis-28" onClick={() => updatePlan(plan, "back-to-wishlist")}>放回想去</button>
-          <button className="secondary-button flex-1 basis-28" onClick={() => updatePlan(plan, "not-interested")}>不想去了</button>
-        </div>
-        <FeedbackButtons onPick={(feedback) => visitTarget(plan.targetType, plan.targetId, feedback, plan.date)} />
-      </div>
-    </article>
+      )}
+    </div>
   );
 }
 
@@ -1865,9 +1891,9 @@ function EmptyState({ children }) {
 function FeedbackButtons({ onPick }) {
   return (
     <div className="flex flex-wrap gap-2">
-      <button className="secondary-button flex-1 basis-20" type="button" onClick={() => onPick("want_again")}>还想去</button>
-      <button className="secondary-button flex-1 basis-20" type="button" onClick={() => onPick("ok")}>一般</button>
-      <button className="secondary-button flex-1 basis-20" type="button" onClick={() => onPick("no_again")}>不再去</button>
+      <button className="secondary-button flex-1 basis-16" type="button" onClick={() => onPick("want_again")}>还想去</button>
+      <button className="secondary-button flex-1 basis-16" type="button" onClick={() => onPick("ok")}>一般</button>
+      <button className="secondary-button flex-1 basis-16" type="button" onClick={() => onPick("no_again")}>不再去</button>
     </div>
   );
 }
@@ -2053,9 +2079,21 @@ function formatDate(date) {
   });
 }
 
+/* Distance from today, in plain words — the calendar grid above already
+   carries the absolute date, so the row only needs the "when". */
+function relativeDayLabel(date) {
+  const diff = Math.round((new Date(`${date}T00:00:00`) - new Date(`${today()}T00:00:00`)) / 86400000);
+  if (diff === 0) return "就是今天";
+  if (diff === 1) return "明天";
+  if (diff === 2) return "后天";
+  if (diff > 0) return `还有 ${diff} 天`;
+  if (diff === -1) return "昨天";
+  return `已过 ${-diff} 天`;
+}
+
 function formatCalendarDateLabel(date, hasPlan, isSelected) {
   const parsed = new Date(`${date}T00:00:00`);
-  const weekday = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][parsed.getDay()];
+  const weekday = WEEKDAYS[parsed.getDay()];
   const parts = [`${parsed.getFullYear()}年${parsed.getMonth() + 1}月${parsed.getDate()}日`, weekday];
   if (date === today()) parts.push("今天");
   if (hasPlan) parts.push("已有计划");
