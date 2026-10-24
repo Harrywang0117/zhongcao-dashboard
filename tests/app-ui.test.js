@@ -126,18 +126,78 @@ test("calendar date buttons have descriptive accessible names", () => {
   assert.match(appSource, /已有计划/);
 });
 
-test("wishlist tag filtering exposes all used tags with compact expansion", () => {
-  assert.match(appSource, /ChipFilters/);
+test("wishlist filters live in a sheet and only active ones take list space", () => {
+  // 旧版把添加人和标签 chip 全部常驻在列表上方，折成三行吃掉 150px。
+  // 现在控件在 sheet 里，列表上方只留搜索 + 筛选按钮，外加已选中的 token。
+  assert.match(appSource, /function FilterBar\(/);
+  assert.match(appSource, /function FilterSheet\(/);
+  assert.doesNotMatch(appSource, /function ChipFilters\(/);
   assert.match(appSource, /tagNamesByFrequency/);
   assert.doesNotMatch(appSource, /topTagNames\(base,\s*4\)/);
-  assert.match(appSource, /collapsedTagChips/);
   assert.match(appSource, /更多 \$\{hiddenTagCount\}/);
-  assert.match(appSource, /aria-label="标签筛选"/);
   assert.match(appSource, /filter-chip/);
-  assert.match(stylesSource, /\.filter-stack/);
-  assert.match(stylesSource, /\.filter-more/);
   assert.match(appSource, /filterByTags/);
   assert.match(appSource, /setSelectedTags\(selectedTags\.includes\(tag\)/);
+  assert.match(stylesSource, /\.filter-stack/);
+  assert.match(stylesSource, /\.filter-more/);
+  assert.match(stylesSource, /\.filter-token/);
+
+  // sheet 是模态：焦点进出、Escape 关闭、挂到 body 不受祖先 transform 影响
+  assert.match(appSource, /createPortal/);
+  assert.match(appSource, /role="dialog"/);
+  assert.match(appSource, /aria-modal="true"/);
+  assert.match(appSource, /event\.key === "Escape"/);
+  assert.match(appSource, /restoreFocus/);
+  assert.match(appSource, /aria-label=\{`移除筛选 \$\{label\}`\}/);
+});
+
+test("the top bar shows a real count, never a decorative subtitle", () => {
+  // 旧版顶栏「大标题 + 一句情绪文案」会和正文区块标题重复，
+  // 收件箱页甚至把同一句话说了两遍。
+  assert.match(appSource, /function topBarCount\(/);
+  assert.doesNotMatch(appSource, /function topBarSubtitle\(/);
+  assert.doesNotMatch(appSource, /条灵感，等一次出发/);
+  assert.doesNotMatch(appSource, /给想去的地方安排日期/);
+  assert.match(stylesSource, /\.app-bar-count/);
+  assert.match(stylesSource, /height:\s*56px/);
+});
+
+test("shared PostgreSQL state is visible: sync status, remote edits, offline", () => {
+  // 迁到共享库之后，409 重放会把对方的状态换进当前视图。
+  // 以前这一步是无声的；现在有常驻同步点和一条要人点掉的提示条。
+  assert.match(appSource, /function SyncDot\(/);
+  assert.match(appSource, /function RemoteChangeBar\(/);
+  assert.match(appSource, /setSyncStatus\("saving"\)/);
+  assert.match(appSource, /setSyncStatus\("synced"\)/);
+  assert.match(appSource, /setRemoteChange\(\{ at: Date\.now\(\) \}\)/);
+  assert.match(appSource, /addEventListener\("offline", goOffline\)/);
+  assert.match(appSource, /removeEventListener\("offline", goOffline\)/);
+  assert.match(appSource, /navigator\.onLine === false/);
+  assert.match(appSource, /aria-live="polite"/);
+  assert.match(stylesSource, /\.sync-dot/);
+  assert.match(stylesSource, /\.remote-bar/);
+});
+
+test("list rows stay dense and keep every field they used to show", () => {
+  // 行高 138 → 97：缩略图 130 → 76，添加人从 76px 胶囊变 22px 字圆点。
+  // 完整说法仍然留在 title 和 sr-only 里，读屏拿得到。
+  assert.match(stylesSource, /grid-template-columns:\s*76px minmax\(0, 1fr\) auto auto/);
+  assert.match(stylesSource, /\.place-thumb \{[^}]*h-\[76px\]/);
+  assert.match(stylesSource, /\.who-dot/);
+  assert.match(appSource, /className=\{`who-dot who-dot-\$\{item\.addedBy \|\| "unknown"\}`\}/);
+  assert.match(appSource, /title=\{contributor\}/);
+  assert.match(appSource, /<span className="sr-only">\{contributor\}<\/span>/);
+});
+
+test("the inbox main path is link plus added-by plus save", () => {
+  // PRD 的硬目标是 15 秒存一条；标题和备注折进 details，默认不占位置。
+  assert.match(appSource, /className="optional-fields"/);
+  assert.match(appSource, /补充店名、备注（可选）/);
+  assert.match(stylesSource, /\.optional-fields/);
+  const formStart = appSource.indexOf("function QuickSaveForm(");
+  const form = appSource.slice(formStart, appSource.indexOf("function InboxItem("));
+  // 主按钮必须排在可选字段之前
+  assert.ok(form.indexOf("保存线索") < form.indexOf("optional-fields"));
 });
 
 test("wishlist filters and cards expose added-by state", () => {

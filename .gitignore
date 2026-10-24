@@ -11,3 +11,6 @@ data/
 
 # Local-only Claude Code settings
 .claude/settings.local.json
+
+# 提案原型的渲染图：由 design-demos/wishlist-v2.html 一条命令重出，不入库
+design-demos/screenshots/wishlist-v2*.png

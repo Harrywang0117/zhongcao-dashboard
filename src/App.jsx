@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowUpDown,
   Check,
@@ -9,12 +10,15 @@ import {
   Loader2,
   Minus,
   Plus,
+  RefreshCw,
   RotateCw,
   Search,
+  SlidersHorizontal,
   ThumbsDown,
   ThumbsUp,
   Trash2,
-  Undo2
+  Undo2,
+  X
 } from "lucide-react";
 
 import {
@@ -80,6 +84,8 @@ const FEEDBACK_LABELS = {
   no_again: "不再去"
 };
 
+const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
 const FEEDBACK_TOAST_MESSAGES = {
   want_again: "已记录，还可以再次安排",
   ok: "已记录轻反馈",
@@ -119,6 +125,11 @@ export default function App() {
   const [planDates, setPlanDates] = useState({});
   const [visitDates, setVisitDates] = useState({});
   const [rescheduleDates, setRescheduleDates] = useState({});
+  // 迁到共享 PostgreSQL 之后，界面必须说清楚「这份数据不只你一个人在写」。
+  // syncStatus: synced | saving | offline | error
+  const [syncStatus, setSyncStatus] = useState("synced");
+  // 对方的改动被 409 重放吞进来时，留一条要人点掉的提示，而不是静默换 state。
+  const [remoteChange, setRemoteChange] = useState(null);
   const toastTimer = useRef(0);
   const demoMode = useRef(isDemoMode());
   const stateRef = useRef(null);
@@ -143,9 +154,19 @@ export default function App() {
       });
       registerServiceWorker();
     }
+    const goOffline = () => setSyncStatus("offline");
+    const goOnline = () => setSyncStatus((current) => (current === "offline" ? "synced" : current));
+    if (!demoMode.current && typeof navigator !== "undefined" && navigator.onLine === false) {
+      setSyncStatus("offline");
+    }
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+
     return () => {
       mounted = false;
       window.clearTimeout(toastTimer.current);
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
     };
   }, []);
 
@@ -173,17 +194,36 @@ export default function App() {
   }
 
   async function persist(nextState, message = "", undoPayload = null) {
-    const saved = demoMode.current ? nextState : await saveState(nextState);
-    stateRef.current = saved;
-    setState(saved);
-    if (message) showToast(message, undoPayload);
-    return saved;
+    if (demoMode.current) {
+      stateRef.current = nextState;
+      setState(nextState);
+      if (message) showToast(message, undoPayload);
+      return nextState;
+    }
+    setSyncStatus("saving");
+    try {
+      const saved = await saveState(nextState);
+      stateRef.current = saved;
+      setState(saved);
+      setSyncStatus("synced");
+      if (message) showToast(message, undoPayload);
+      return saved;
+    } catch (error) {
+      // 409 由 saveStateMutation 重放，不算失败；其余都要让用户看见。
+      if (!(error instanceof StateConflictError)) {
+        setSyncStatus(typeof navigator !== "undefined" && navigator.onLine === false ? "offline" : "error");
+      }
+      throw error;
+    }
   }
 
   function mutate(mutator, message = "", undoPayload = null) {
     const adoptRemoteState = (latestState) => {
       stateRef.current = latestState;
       setState(latestState);
+      // 这一步把对方的最新状态整个换进当前视图。以前它是无声的，
+      // 用户只会看到列表莫名其妙变了；现在留一条要人点掉的提示。
+      setRemoteChange({ at: Date.now() });
     };
     const operation = async () => {
       try {
@@ -581,9 +621,17 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <TopBar tab={tab} counts={counts} onQuickAdd={() => setTab("inbox")} />
+      <TopBar
+        tab={tab}
+        counts={counts}
+        syncStatus={demoMode.current ? "demo" : syncStatus}
+        onQuickAdd={() => setTab("inbox")}
+      />
+      {remoteChange && (
+        <RemoteChangeBar onDismiss={() => setRemoteChange(null)} />
+      )}
 
-      <main className="grid gap-4 px-4 py-4">
+      <main className="grid gap-4 px-4 pb-4 pt-3">
         {tab === "inbox" && <InboxScreen {...screenProps} />}
         {tab === "wishlist" && <WishlistScreen {...screenProps} />}
         {tab === "calendar" && <CalendarScreen {...screenProps} />}
@@ -604,40 +652,72 @@ export default function App() {
   );
 }
 
-function TopBar({ tab, counts, onQuickAdd }) {
-  const subtitle = topBarSubtitle(tab, counts);
+function TopBar({ tab, counts, syncStatus, onQuickAdd }) {
+  // 一行：吉祥物 · 标题 · 真实计数 · 同步点 · 新建。
+  // 旧版在标题下面还有一句情绪化的装饰副标题，和正文里的区块标题
+  // 说同一件事；收件箱页甚至把同一句话一字不差地说了两遍。
+  const count = topBarCount(tab, counts);
+  const showAdd = tab !== "inbox";
 
   return (
     <header className="app-bar">
-      <div className="flex items-center gap-2.5">
-        <Mascot size={46} />
-        <div className="min-w-0 flex-1">
-          <h1 className="font-display text-[26px] leading-none text-zinc-950">{TAB_LABELS[tab]}</h1>
-          <p className="mt-1 truncate text-sm font-medium text-zinc-500">{subtitle}</p>
-        </div>
+      <Mascot size={34} />
+      <h1 className="app-bar-title">{TAB_LABELS[tab]}</h1>
+      {count && <span className="app-bar-count">{count}</span>}
+      <span className="flex-1" />
+      <SyncDot status={syncStatus} />
+      {showAdd && (
         <button className="icon-fab" type="button" aria-label="去收件箱保存新线索" title="保存新线索" onClick={onQuickAdd}>
-          <Plus size={22} strokeWidth={2.4} />
+          <Plus size={20} strokeWidth={2.4} />
         </button>
-      </div>
+      )}
     </header>
   );
 }
 
-function topBarSubtitle(tab, counts) {
+function topBarCount(tab, counts) {
   switch (tab) {
     case "inbox":
-      return counts.pending ? `${counts.pending} 条待整理` : "先收起来，之后再整理";
+      return counts.pending ? `${counts.pending} 条待整理` : "";
     case "wishlist":
-      return `${counts.wishlist} 条灵感，等一次出发`;
+      return `${counts.wishlist} 条`;
     case "calendar":
-      return counts.plans ? `${counts.plans} 个计划待赴约` : "给想去的地方安排日期";
+      return counts.plans ? `${counts.plans} 个计划` : "";
     case "visited":
-      return counts.visits ? `${counts.visits} 条到店反馈` : "到店后留一个轻反馈";
-    case "profile":
-      return "标签、备份与本地数据";
+      return counts.visits ? `${counts.visits} 条` : "";
     default:
       return "";
   }
+}
+
+const SYNC_LABELS = {
+  synced: "已同步",
+  saving: "正在保存",
+  offline: "离线，改动暂时存不下",
+  error: "保存失败",
+  demo: "演示数据"
+};
+
+function SyncDot({ status }) {
+  const label = SYNC_LABELS[status] || SYNC_LABELS.synced;
+  // 一切正常时只留一个点，把横向空间让给标题；需要注意时才带上文字。
+  const quiet = status === "synced";
+  return (
+    <span className={`sync-dot sync-dot-${status}`} role="status" aria-live="polite" title={label}>
+      <i aria-hidden="true" />
+      <span className={quiet ? "sr-only" : undefined}>{label}</span>
+    </span>
+  );
+}
+
+function RemoteChangeBar({ onDismiss }) {
+  return (
+    <div className="remote-bar" role="status" aria-live="polite">
+      <RefreshCw size={15} strokeWidth={2.2} aria-hidden="true" />
+      <span>另一台设备刚改过，已经显示为最新内容</span>
+      <button type="button" onClick={onDismiss}>知道了</button>
+    </div>
+  );
 }
 
 function InboxScreen({
@@ -655,12 +735,6 @@ function InboxScreen({
   return (
     <>
       <section className="panel capture-panel">
-        <div className="grid gap-1.5">
-          <h2 className="font-display text-2xl leading-tight text-zinc-950">先收起来，之后再整理</h2>
-          <p className="max-w-prose text-[15px] leading-relaxed text-zinc-600">
-            分享文案、链接、店名都可以先放进来，之后按店铺或菜品慢慢归档。
-          </p>
-        </div>
         <QuickSaveForm
           draft={quickDraft}
           setDraft={setQuickDraft}
@@ -669,7 +743,10 @@ function InboxScreen({
         />
       </section>
 
-      <SectionHead title="待整理线索" description="一次处理几条就好，别让收藏变成负担。" count={`${items.length} 条`} />
+      <div className="list-head">
+        <h2 className="list-head-title">待整理线索</h2>
+        <span className="list-head-count">{items.length} 条</span>
+      </div>
       {items.length ? (
         items.slice(0, 20).map((item) => (
           <InboxItem
@@ -688,6 +765,8 @@ function InboxScreen({
 }
 
 function QuickSaveForm({ draft, setDraft, pending, onSubmit }) {
+  const [extrasOpen, setExtrasOpen] = useState(false);
+
   function updateAddedBy(addedBy) {
     rememberLastAddedBy(addedBy);
     setDraft({ ...draft, addedBy });
@@ -712,25 +791,6 @@ function QuickSaveForm({ draft, setDraft, pending, onSubmit }) {
           onChange={(event) => setDraft({ ...draft, url: event.target.value })}
         />
       </Field>
-      <Field label="标题/店名/菜名">
-        <input
-          name="fallbackTitle"
-          autoComplete="off"
-          value={draft.fallbackTitle}
-          placeholder="可选：解析不完整时可以补充..."
-          onChange={(event) => setDraft({ ...draft, fallbackTitle: event.target.value })}
-        />
-      </Field>
-      <Field label="备注">
-        <textarea
-          name="note"
-          rows={2}
-          autoComplete="off"
-          value={draft.note}
-          placeholder="可选：比如朋友推荐、想吃哪道菜..."
-          onChange={(event) => setDraft({ ...draft, note: event.target.value })}
-        />
-      </Field>
       <Field label="添加人">
         <AddedBySegmentedControl
           value={draft.addedBy}
@@ -741,6 +801,37 @@ function QuickSaveForm({ draft, setDraft, pending, onSubmit }) {
       <button className="primary-button" type="submit" disabled={pending} aria-busy={pending}>
         {pending ? "保存中..." : "保存线索"}
       </button>
+
+      {/* PRD 的硬目标是 15 秒存一条。标题和备注都是可选的，
+          放在主按钮之前会把主路径撑开两屏，折起来默认不占位置。 */}
+      <details
+        className="optional-fields"
+        open={extrasOpen}
+        onToggle={(event) => setExtrasOpen(event.currentTarget.open)}
+      >
+        <summary>补充店名、备注（可选）</summary>
+        <div className="grid gap-3 pt-3">
+          <Field label="标题/店名/菜名">
+            <input
+              name="fallbackTitle"
+              autoComplete="off"
+              value={draft.fallbackTitle}
+              placeholder="可选：解析不完整时可以补充..."
+              onChange={(event) => setDraft({ ...draft, fallbackTitle: event.target.value })}
+            />
+          </Field>
+          <Field label="备注">
+            <textarea
+              name="note"
+              rows={2}
+              autoComplete="off"
+              value={draft.note}
+              placeholder="可选：比如朋友推荐、想吃哪道菜..."
+              onChange={(event) => setDraft({ ...draft, note: event.target.value })}
+            />
+          </Field>
+        </div>
+      </details>
     </form>
   );
 }
@@ -860,8 +951,9 @@ function WishlistScreen(props) {
 
   return (
     <>
-      <SearchField value={query} onChange={setQuery} />
-      <ChipFilters
+      <FilterBar
+        query={query}
+        setQuery={setQuery}
         addedByFilter={addedByFilter}
         setAddedByFilter={setAddedByFilter}
         selectedTags={selectedTags}
@@ -874,8 +966,8 @@ function WishlistScreen(props) {
 
       {featured ? (
         <>
-          <div className="flex items-center justify-between gap-3 px-1 pt-1">
-            <h2 className="font-display text-xl text-zinc-950">{sortHeading}</h2>
+          <div className="list-head">
+            <h2 className="list-head-title">{sortHeading}</h2>
             <button
               className="sort-chip"
               type="button"
@@ -887,7 +979,7 @@ function WishlistScreen(props) {
             </button>
           </div>
           <FeatureCard type={featured.type} item={featured.item} {...props} />
-          <div className="grid gap-3">
+          <div className="place-list">
             {rest.length ? (
               rest.map(({ type, item }) => (
                 <PlaceCard key={`${type}:${item.id}`} type={type} item={item} {...props} />
@@ -920,7 +1012,7 @@ function SearchField({ value, onChange }) {
   );
 }
 
-function ChipFilters({
+function FilterBar({
   addedByFilter,
   setAddedByFilter,
   selectedTags,
@@ -928,54 +1020,173 @@ function ChipFilters({
   counts,
   tagChips,
   tagsExpanded,
-  setTagsExpanded
+  setTagsExpanded,
+  query,
+  setQuery
 }) {
+  // 旧版把「全部/小王/小张」加七个标签 chip 全部常驻，折成三行吃掉 150px，
+  // 而大多数时候一个都没选。筛选是偶发动作，内容是每次都要的：
+  // 控件收进 sheet，只有已选中的筛选才以可点掉的 token 占位置。
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const activeCount = (addedByFilter === "all" ? 0 : 1) + selectedTags.length;
+
   function toggleTag(tag) {
     setSelectedTags(selectedTags.includes(tag) ? selectedTags.filter((item) => item !== tag) : [...selectedTags, tag]);
   }
 
-  const selectedTagChips = tagChips.filter((tag) => selectedTags.includes(tag));
-  const unselectedTagChips = tagChips.filter((tag) => !selectedTags.includes(tag));
-  const collapsedTagChips = [
-    ...selectedTagChips,
-    ...unselectedTagChips.slice(0, Math.max(0, 4 - selectedTagChips.length))
-  ];
-  const visibleTagChips = tagsExpanded ? [...selectedTagChips, ...unselectedTagChips] : collapsedTagChips;
-  const hiddenTagCount = tagChips.length - visibleTagChips.length;
-
   return (
-    <div className="filter-stack" aria-label="快速筛选">
-      <div className="filter-row" aria-label="添加人筛选">
-        <FilterChip active={addedByFilter === "all"} onClick={() => setAddedByFilter("all")}>
-          全部<span className="chip-count">{counts.all}</span>
-        </FilterChip>
-        <FilterChip active={addedByFilter === "xiaowang"} onClick={() => setAddedByFilter("xiaowang")}>
-          小王<span className="chip-count">{counts.xiaowang}</span>
-        </FilterChip>
-        <FilterChip active={addedByFilter === "xiaozhang"} onClick={() => setAddedByFilter("xiaozhang")}>
-          小张<span className="chip-count">{counts.xiaozhang}</span>
-        </FilterChip>
+    <div className="filter-stack">
+      <div className="find-row">
+        <SearchField value={query} onChange={setQuery} />
+        <button
+          className={activeCount ? "filter-button filter-button-active" : "filter-button"}
+          type="button"
+          aria-expanded={sheetOpen}
+          aria-haspopup="dialog"
+          onClick={() => setSheetOpen(true)}
+        >
+          <SlidersHorizontal size={17} strokeWidth={2.2} aria-hidden="true" />
+          筛选
+          {activeCount > 0 && <span className="filter-badge">{activeCount}</span>}
+        </button>
       </div>
-      {tagChips.length ? (
-        <div className="tag-filter-row" aria-label="标签筛选">
-          {visibleTagChips.map((tag) => (
-            <FilterChip key={tag} active={selectedTags.includes(tag)} onClick={() => toggleTag(tag)}>
-              {tag}
-            </FilterChip>
-          ))}
-          {(hiddenTagCount > 0 || tagsExpanded) && (
-            <button
-              className="filter-more"
-              type="button"
-              aria-expanded={tagsExpanded}
-              onClick={() => setTagsExpanded(!tagsExpanded)}
-            >
-              {tagsExpanded ? "收起" : `更多 ${hiddenTagCount}`}
-            </button>
+
+      {activeCount > 0 && (
+        <div className="token-row" aria-label="已选筛选">
+          {addedByFilter !== "all" && (
+            <FilterToken label={addedByLabel(addedByFilter)} onRemove={() => setAddedByFilter("all")} />
           )}
+          {selectedTags.map((tag) => (
+            <FilterToken key={tag} label={tag} onRemove={() => toggleTag(tag)} />
+          ))}
         </div>
-      ) : null}
+      )}
+
+      {sheetOpen && (
+        <FilterSheet
+          addedByFilter={addedByFilter}
+          setAddedByFilter={setAddedByFilter}
+          selectedTags={selectedTags}
+          toggleTag={toggleTag}
+          counts={counts}
+          tagChips={tagChips}
+          tagsExpanded={tagsExpanded}
+          setTagsExpanded={setTagsExpanded}
+          onClear={() => {
+            setAddedByFilter("all");
+            setSelectedTags([]);
+          }}
+          onClose={() => setSheetOpen(false)}
+        />
+      )}
     </div>
+  );
+}
+
+function FilterToken({ label, onRemove }) {
+  return (
+    <button className="filter-token" type="button" aria-label={`移除筛选 ${label}`} onClick={onRemove}>
+      {label}
+      <X size={13} strokeWidth={2.8} aria-hidden="true" />
+    </button>
+  );
+}
+
+function FilterSheet({
+  addedByFilter,
+  setAddedByFilter,
+  selectedTags,
+  toggleTag,
+  counts,
+  tagChips,
+  tagsExpanded,
+  setTagsExpanded,
+  onClear,
+  onClose
+}) {
+  const panel = useRef(null);
+  const restoreFocus = useRef(null);
+
+  useEffect(() => {
+    restoreFocus.current = document.activeElement;
+    panel.current?.focus();
+    function onKey(event) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      if (restoreFocus.current instanceof HTMLElement) restoreFocus.current.focus();
+    };
+  }, [onClose]);
+
+  const visibleTagChips = tagsExpanded ? tagChips : tagChips.slice(0, 12);
+  const hiddenTagCount = tagChips.length - visibleTagChips.length;
+  const activeCount = (addedByFilter === "all" ? 0 : 1) + selectedTags.length;
+
+  return createPortal(
+    <div className="sheet-scrim" role="presentation" onClick={onClose}>
+      <section
+        className="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="filter-sheet-title"
+        tabIndex={-1}
+        ref={panel}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="sheet-head">
+          <h2 id="filter-sheet-title" className="text-[17px] font-bold text-zinc-950">筛选</h2>
+          {activeCount > 0 && (
+            <button className="text-button" type="button" onClick={onClear}>清除全部</button>
+          )}
+          <button className="sheet-close" type="button" aria-label="关闭筛选" onClick={onClose}>
+            <X size={18} strokeWidth={2.4} />
+          </button>
+        </div>
+
+        <div className="sheet-body">
+          <p className="sheet-label" id="filter-added-by">添加人</p>
+          <div className="filter-row" aria-labelledby="filter-added-by">
+            <FilterChip active={addedByFilter === "all"} onClick={() => setAddedByFilter("all")}>
+              全部<span className="chip-count">{counts.all}</span>
+            </FilterChip>
+            <FilterChip active={addedByFilter === "xiaowang"} onClick={() => setAddedByFilter("xiaowang")}>
+              小王<span className="chip-count">{counts.xiaowang}</span>
+            </FilterChip>
+            <FilterChip active={addedByFilter === "xiaozhang"} onClick={() => setAddedByFilter("xiaozhang")}>
+              小张<span className="chip-count">{counts.xiaozhang}</span>
+            </FilterChip>
+          </div>
+
+          {tagChips.length ? (
+            <>
+              <p className="sheet-label" id="filter-tags">标签</p>
+              <div className="tag-filter-row" aria-labelledby="filter-tags">
+                {visibleTagChips.map((tag) => (
+                  <FilterChip key={tag} active={selectedTags.includes(tag)} onClick={() => toggleTag(tag)}>
+                    {tag}
+                  </FilterChip>
+                ))}
+                {(hiddenTagCount > 0 || tagsExpanded) && (
+                  <button
+                    className="filter-more"
+                    type="button"
+                    aria-expanded={tagsExpanded}
+                    onClick={() => setTagsExpanded(!tagsExpanded)}
+                  >
+                    {tagsExpanded ? "收起" : `更多 ${hiddenTagCount}`}
+                  </button>
+                )}
+              </div>
+            </>
+          ) : null}
+        </div>
+
+        <button className="primary-button sheet-done" type="button" onClick={onClose}>看结果</button>
+      </section>
+    </div>,
+    document.body
   );
 }
 
@@ -1093,9 +1304,9 @@ function PlaceCard(props) {
   const [open, setOpen] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
   const location = itemLocation(state, type, item);
-  const meta = [location, type === "store" ? "店铺" : "菜品", `${addedByLabel(item.addedBy)}添加`]
-    .filter(Boolean)
-    .join(" · ");
+  // 添加人从 meta 行挪到行尾的字圆点，把横向空间还给店名与商圈。
+  const meta = [location, type === "store" ? "店铺" : "菜品"].filter(Boolean).join(" · ");
+  const contributor = `${addedByLabel(item.addedBy)}添加`;
 
   return (
     <div className="grid gap-2">
@@ -1118,7 +1329,7 @@ function PlaceCard(props) {
           <span className="block truncate font-display text-[17px] text-zinc-950">{item.name}</span>
           <span className="mt-0.5 block truncate text-[13px] font-medium text-zinc-500">{meta}</span>
           {item.tagNames?.length ? (
-            <span className="mt-2 flex flex-wrap gap-2">
+            <span className="mt-1.5 flex flex-nowrap items-center gap-1.5 overflow-hidden">
               {item.tagNames.slice(0, 2).map((tag) => (
                 <span key={tag} className="chip-passive">{tag}</span>
               ))}
@@ -1126,8 +1337,12 @@ function PlaceCard(props) {
             </span>
           ) : null}
         </span>
+        <span className={`who-dot who-dot-${item.addedBy || "unknown"}`} title={contributor}>
+          <span className="sr-only">{contributor}</span>
+          <span aria-hidden="true">{addedByLabel(item.addedBy).slice(-1)}</span>
+        </span>
         <span className="place-chevron" aria-hidden="true">
-          <ChevronRight size={20} strokeWidth={2.2} />
+          <ChevronRight size={18} strokeWidth={2.2} />
         </span>
       </button>
       {open && (
@@ -1340,7 +1555,6 @@ function CalendarScreen(props) {
       <CalendarGrid plans={scheduledPlans} {...props} />
       <SectionHead
         title={selectedPlanDate ? formatDate(selectedPlanDate) : "未来计划"}
-        description={selectedPlanDate ? "这天安排了这些选择。" : "没去也没关系，改期、放回想去或直接放下。"}
         count={`${plans.length} 个`}
       />
       <div className="grid gap-3">
@@ -1378,10 +1592,7 @@ function CalendarGrid({ plans, selectedPlanDate, setSelectedPlanDate }) {
   return (
     <section className="panel">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="mini-label">日历视图</p>
-          <h2 className="font-display text-3xl text-zinc-950">{year}年{month + 1}月</h2>
-        </div>
+        <h2 className="font-display text-[22px] text-zinc-950">{year}年{month + 1}月</h2>
         <div className="flex items-center gap-2">
           {selectedPlanDate && <button className="text-button" type="button" onClick={() => setSelectedPlanDate("")}>看全部</button>}
           <button className="cal-nav" type="button" aria-label="上个月" onClick={() => shiftMonth(-1)}>
@@ -1423,29 +1634,53 @@ function CalendarGrid({ plans, selectedPlanDate, setSelectedPlanDate }) {
 }
 
 function PlanCard({ state, plan, rescheduleDates, setRescheduleDates, updatePlan, visitTarget }) {
+  const [open, setOpen] = useState(false);
   const target = findTarget(state, plan.targetType, plan.targetId);
+  const parsed = new Date(`${plan.date}T00:00:00`);
+  const meta = [
+    plan.targetType === "store" ? "店铺" : "菜品",
+    target ? itemLocation(state, plan.targetType, target) : "",
+    relativeDayLabel(plan.date)
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <article className="item-card grid grid-cols-[104px_minmax(0,1fr)]">
-      <div className="date-block">
-        <strong className="font-display text-lg leading-tight">{formatDate(plan.date)}</strong>
-        <span className="mini-label mt-1">{plan.targetType === "store" ? "店铺" : "菜品"}</span>
-      </div>
-      <div className="grid min-w-0 gap-3 p-4">
-        <h3 className="break-words font-display text-xl text-zinc-950">{target?.name || "已删除项目"}</h3>
-        <div className="action-panel">
-          <Field label="改到">
-            <input type="date" value={rescheduleDates[plan.id] || plan.date} onChange={(event) => setRescheduleDates({ ...rescheduleDates, [plan.id]: event.target.value })} />
-          </Field>
-          <button className="secondary-button" onClick={() => updatePlan(plan, "reschedule")}>改期</button>
+    <div className="grid gap-2">
+      <button className="plan-row text-left" type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className={`plan-date${plan.date === today() ? " plan-date-today" : ""}`}>
+          <strong>{parsed.getMonth() + 1}/{parsed.getDate()}</strong>
+          <em>{WEEKDAYS[parsed.getDay()]}</em>
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate font-display text-[17px] text-zinc-950">{target?.name || "已删除项目"}</span>
+          <span className="mt-0.5 block truncate text-[13px] font-medium text-zinc-500">{meta}</span>
+        </span>
+        <span className="place-chevron" aria-hidden="true">
+          <ChevronRight size={20} strokeWidth={2.2} />
+        </span>
+      </button>
+      {open && (
+        <div className="item-card card-drawer p-4">
+          <div className="action-panel border-t-0 pt-0">
+            <Field label="改到">
+              <input type="date" value={rescheduleDates[plan.id] || plan.date} onChange={(event) => setRescheduleDates({ ...rescheduleDates, [plan.id]: event.target.value })} />
+            </Field>
+            <button className="secondary-button" onClick={() => updatePlan(plan, "reschedule")}>改期</button>
+          </div>
+          <div className="action-panel">
+            <span className="mini-label">去过了？</span>
+            <FeedbackButtons onPick={(feedback) => visitTarget(plan.targetType, plan.targetId, feedback, plan.date)} />
+          </div>
+          <div className="action-panel">
+            <div className="flex flex-wrap gap-2">
+              <button className="secondary-button flex-1 basis-24" onClick={() => updatePlan(plan, "back-to-wishlist")}>放回想去</button>
+              <button className="secondary-button flex-1 basis-24" onClick={() => updatePlan(plan, "not-interested")}>不想去了</button>
+            </div>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="secondary-button flex-1 basis-28" onClick={() => updatePlan(plan, "back-to-wishlist")}>放回想去</button>
-          <button className="secondary-button flex-1 basis-28" onClick={() => updatePlan(plan, "not-interested")}>不想去了</button>
-        </div>
-        <FeedbackButtons onPick={(feedback) => visitTarget(plan.targetType, plan.targetId, feedback, plan.date)} />
-      </div>
-    </article>
+      )}
+    </div>
   );
 }
 
@@ -1456,7 +1691,7 @@ function VisitedScreen({ state, softDelete }) {
 
   return (
     <>
-      <SectionHead title="轻反馈" description="只留给未来自己的一个判断。" count={`${visits.length} 条`} />
+      <SectionHead title="轻反馈" count={`${visits.length} 条`} />
       <div className="grid gap-3">
         {visits.length ? visits.map((visit) => <VisitCard key={visit.id} state={state} visit={visit} softDelete={softDelete} />) : <EmptyState>到店后点一个轻反馈就好</EmptyState>}
       </div>
@@ -1651,14 +1886,13 @@ function Toast({ message, undo, onUndo }) {
   );
 }
 
-function SectionHead({ title, description, count }) {
+// 一行：区块名 + 真实计数。旧版的 24px 大标题 + 一句情绪文案 + 计数胶囊
+// 在每一页都和顶栏说同一件事，三者加起来吃掉约 130px。
+function SectionHead({ title, count }) {
   return (
-    <section className="flex items-end justify-between gap-3 px-1 pt-1">
-      <div>
-        <h2 className="font-display text-2xl text-zinc-950">{title}</h2>
-        <p className="text-sm text-zinc-600">{description}</p>
-      </div>
-      <span className="shrink-0 rounded-full border border-emerald-950/12 bg-white/70 px-3 py-1 text-sm font-bold text-zinc-500">{count}</span>
+    <section className="list-head">
+      <h2 className="list-head-title">{title}</h2>
+      <span className="list-head-count">{count}</span>
     </section>
   );
 }
@@ -1865,9 +2099,9 @@ function EmptyState({ children }) {
 function FeedbackButtons({ onPick }) {
   return (
     <div className="flex flex-wrap gap-2">
-      <button className="secondary-button flex-1 basis-20" type="button" onClick={() => onPick("want_again")}>还想去</button>
-      <button className="secondary-button flex-1 basis-20" type="button" onClick={() => onPick("ok")}>一般</button>
-      <button className="secondary-button flex-1 basis-20" type="button" onClick={() => onPick("no_again")}>不再去</button>
+      <button className="secondary-button flex-1 basis-16" type="button" onClick={() => onPick("want_again")}>还想去</button>
+      <button className="secondary-button flex-1 basis-16" type="button" onClick={() => onPick("ok")}>一般</button>
+      <button className="secondary-button flex-1 basis-16" type="button" onClick={() => onPick("no_again")}>不再去</button>
     </div>
   );
 }
@@ -2053,9 +2287,21 @@ function formatDate(date) {
   });
 }
 
+/* Distance from today, in plain words — the calendar grid above already
+   carries the absolute date, so the row only needs the "when". */
+function relativeDayLabel(date) {
+  const diff = Math.round((new Date(`${date}T00:00:00`) - new Date(`${today()}T00:00:00`)) / 86400000);
+  if (diff === 0) return "就是今天";
+  if (diff === 1) return "明天";
+  if (diff === 2) return "后天";
+  if (diff > 0) return `还有 ${diff} 天`;
+  if (diff === -1) return "昨天";
+  return `已过 ${-diff} 天`;
+}
+
 function formatCalendarDateLabel(date, hasPlan, isSelected) {
   const parsed = new Date(`${date}T00:00:00`);
-  const weekday = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][parsed.getDay()];
+  const weekday = WEEKDAYS[parsed.getDay()];
   const parts = [`${parsed.getFullYear()}年${parsed.getMonth() + 1}月${parsed.getDate()}日`, weekday];
   if (date === today()) parts.push("今天");
   if (hasPlan) parts.push("已有计划");
