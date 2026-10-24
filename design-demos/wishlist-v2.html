@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>种草 v2 提案</title>
+<style>
+  :root{
+    --bg:#fff;
+    --surface:#fff;
+    --sunk:#F4F3F0;
+    --ink:#1D1B19;
+    --body:#4A443B;
+    --muted:#6B6359;
+    --faint:#948B7E;
+    --hair:rgba(29,27,25,.10);
+    --hair-soft:rgba(29,27,25,.06);
+    /* Pepper: fill 变深到 5.26:1，白字终于能用；亮一档只做描边与图标 */
+    --accent:#E34A2C;
+    --accent-fill:#C33C22;
+    --accent-tint:#FDF0EC;
+    --r-thumb:12px;
+    --r-card:14px;
+    --r-pill:999px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","HarmonyOS Sans SC","Noto Sans CJK SC","Microsoft YaHei",system-ui,sans-serif;
+    background:#E8E6E2;color:var(--ink);-webkit-font-smoothing:antialiased;
+    padding:28px 16px 64px;
+  }
+  .wrap{max-width:1180px;margin:0 auto}
+  .lede{max-width:760px;margin:0 auto 28px}
+  .lede h1{font-size:23px;font-weight:800;letter-spacing:-.03em;margin-bottom:8px}
+  .lede p{font-size:15px;line-height:1.65;color:var(--body)}
+  .lede code{background:#fff;padding:1px 5px;border-radius:4px;font-size:13px}
+  .decks{display:flex;gap:26px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+  .deck{width:375px}
+  .deck > figcaption{
+    font-size:13px;font-weight:700;color:#55504A;margin-bottom:9px;
+    display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+  }
+  .deck > figcaption b{font-size:14px;color:var(--ink)}
+  .phone{
+    width:375px;height:812px;background:var(--bg);border-radius:26px;overflow:hidden;
+    position:relative;display:flex;flex-direction:column;
+    box-shadow:0 2px 4px rgba(40,32,18,.06),0 30px 60px -32px rgba(40,32,18,.42);
+  }
+
+  /* ---------- top bar: 56px, 标题与计数同行，没有装饰副标题 ---------- */
+  .bar{
+    flex:none;height:56px;padding:0 16px;display:flex;align-items:center;gap:10px;
+    border-bottom:1px solid var(--hair-soft);background:rgba(255,255,255,.94);
+    backdrop-filter:saturate(1.1) blur(12px);
+  }
+  .bar h2{font-size:21px;font-weight:800;letter-spacing:-.035em;line-height:1}
+  .bar .n{
+    font-size:13px;font-weight:700;color:var(--muted);
+    font-variant-numeric:tabular-nums;margin-top:2px;
+  }
+  .spacer{flex:1}
+  /* 同步状态：迁到共享 PostgreSQL 之后唯一能说明「这不是你一个人的数据」的地方 */
+  .sync{
+    display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:650;
+    color:var(--muted);white-space:nowrap;
+  }
+  .sync .dot{width:6px;height:6px;border-radius:50%;background:#2F6B4F;flex:none}
+  .sync.saving .dot{background:#965B17}
+  .add{
+    flex:none;width:34px;height:34px;border:0;border-radius:11px;background:var(--accent-fill);
+    color:#fff;display:grid;place-items:center;cursor:pointer;
+  }
+  .add svg{width:19px;height:19px}
+
+  /* 对方改了东西时：不是一闪而过的 toast，是一条待处理的条 */
+  .remote{
+    flex:none;display:flex;align-items:center;gap:8px;padding:9px 16px;
+    background:var(--accent-tint);border-bottom:1px solid rgba(227,74,44,.18);
+    font-size:13px;font-weight:600;color:#8A2F18;
+  }
+  .remote button{
+    margin-left:auto;border:0;background:none;color:var(--accent-fill);
+    font-size:13px;font-weight:750;cursor:pointer;padding:3px 2px;
+  }
+
+  .scroll{flex:1;overflow:hidden;position:relative}
+  .pad{padding:12px 16px 0}
+
+  /* ---------- 搜索 + 筛选同一行，三行 chip 收进一个按钮 ---------- */
+  .findrow{display:flex;gap:8px;align-items:center}
+  .search{
+    flex:1;position:relative;
+  }
+  .search input{
+    width:100%;height:42px;border:1px solid var(--hair);border-radius:var(--r-pill);
+    padding:0 14px 0 38px;font-size:15px;font-family:inherit;color:var(--ink);background:#fff;
+  }
+  .search input::placeholder{color:var(--faint)}
+  .search svg{position:absolute;left:13px;top:11px;width:19px;height:19px;color:var(--faint)}
+  .filterbtn{
+    flex:none;height:42px;padding:0 13px;border:1px solid var(--hair);border-radius:var(--r-pill);
+    background:#fff;font-family:inherit;font-size:14px;font-weight:700;color:var(--body);
+    display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+  }
+  .filterbtn svg{width:17px;height:17px}
+  .filterbtn .badge{
+    min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--accent-fill);
+    color:#fff;font-size:12px;font-weight:800;display:grid;place-items:center;
+    font-variant-numeric:tabular-nums;
+  }
+  /* 已选中的筛选才占位置，没选就不出现 */
+  .tokens{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+  .token{
+    display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 9px;
+    border-radius:var(--r-pill);background:var(--accent-tint);color:#8A2F18;
+    font-size:13px;font-weight:700;border:1px solid rgba(227,74,44,.2);
+  }
+  .token svg{width:13px;height:13px;opacity:.65}
+
+  .srow{
+    display:flex;align-items:baseline;justify-content:space-between;
+    margin:16px 0 8px;
+  }
+  .srow h3{font-size:13px;font-weight:750;color:var(--muted);letter-spacing:.01em}
+  .srow button{
+    border:0;background:none;font-family:inherit;font-size:13px;font-weight:700;
+    color:var(--body);cursor:pointer;display:inline-flex;align-items:center;gap:4px;
+  }
+  .srow svg{width:14px;height:14px;color:var(--faint)}
+
+  /* ---------- 列表行：96px，一屏 6 条 ---------- */
+  .list{display:flex;flex-direction:column}
+  .row{
+    display:flex;gap:12px;align-items:center;padding:10px 0;
+    border-bottom:1px solid var(--hair-soft);background:none;border-left:0;border-right:0;border-top:0;
+    width:100%;text-align:left;font-family:inherit;cursor:pointer;
+  }
+  .row:last-child{border-bottom:0}
+  .thumb{
+    flex:none;width:76px;height:76px;border-radius:var(--r-thumb);overflow:hidden;
+    display:grid;place-items:center;font-size:33px;line-height:1;
+  }
+  .meat{background:linear-gradient(150deg,#FBE3D4,#F6C9AE)}
+  .home{background:linear-gradient(150deg,#F7E6DA,#EFD0BC)}
+  .cof{background:linear-gradient(150deg,#EFE6DA,#DECBB4)}
+  .noo{background:linear-gradient(150deg,#FBEFD2,#F3DDAC)}
+  .sus{background:linear-gradient(150deg,#D9EDE6,#BCDCD1)}
+  .des{background:linear-gradient(150deg,#F7DEE4,#EFC3CE)}
+  .rbody{flex:1;min-width:0}
+  .rtop{display:flex;align-items:baseline;gap:8px}
+  .rname{
+    font-size:17px;font-weight:750;letter-spacing:-.015em;color:var(--ink);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .rmeta{
+    margin-top:3px;font-size:13px;font-weight:550;color:var(--muted);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .rtags{margin-top:6px;display:flex;gap:5px;align-items:center}
+  .tag{
+    height:22px;padding:0 8px;border-radius:5px;background:var(--sunk);
+    font-size:12px;font-weight:650;color:#5C574F;display:inline-flex;align-items:center;
+  }
+  .more{font-size:12px;font-weight:700;color:var(--muted)}
+  /* 添加人不再是一个胶囊，缩成首字母圆点 —— 两个人就够认 */
+  .who{
+    flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
+    font-size:12px;font-weight:800;color:#fff;letter-spacing:0;
+  }
+  .who-w{background:#7A6A57}
+  .who-z{background:#4A6B7A}
+  .go{flex:none;width:17px;height:17px;color:#A8A094}
+
+  /* ---------- 底栏：墨色滑块，强调色留给主操作 ---------- */
+  .nav{
+    flex:none;height:66px;display:grid;grid-template-columns:repeat(5,1fr);
+    border-top:1px solid var(--hair-soft);background:rgba(255,255,255,.96);
+    backdrop-filter:saturate(1.1) blur(12px);padding:0 6px;
+  }
+  .nav button{
+    border:0;background:none;font-family:inherit;display:grid;justify-items:center;
+    align-content:center;gap:3px;cursor:pointer;color:var(--muted);padding:0;
+  }
+  .nav svg{width:21px;height:21px}
+  .nav span{font-size:12px;font-weight:650}
+  .nav .on{color:var(--ink)}
+  .nav .on span{font-weight:800}
+  .nav .on .pip{
+    position:absolute;margin-top:-34px;width:26px;height:3px;border-radius:2px;background:var(--ink);
+  }
+
+  /* ---------- 收件箱 ---------- */
+  .ibox{padding:14px 16px 0}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:13px;font-weight:700;color:var(--body);margin-bottom:6px}
+  .field input,.field textarea{
+    width:100%;min-height:46px;border:1px solid var(--hair);border-radius:var(--r-card);
+    padding:12px 14px;font-size:16px;font-family:inherit;color:var(--ink);background:#fff;resize:none;
+  }
+  .field input::placeholder,.field textarea::placeholder{color:var(--faint);font-size:15px}
+  .field input:focus,.field textarea:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:transparent}
+  .seg{
+    display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;background:var(--sunk);
+    border-radius:var(--r-card);
+  }
+  .seg button{
+    height:38px;border:0;border-radius:11px;background:none;font-family:inherit;
+    font-size:15px;font-weight:700;color:var(--body);cursor:pointer;
+  }
+  .seg .on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(40,32,18,.1)}
+  .cta{
+    width:100%;height:50px;border:0;border-radius:var(--r-card);background:var(--accent-fill);
+    color:#fff;font-family:inherit;font-size:16px;font-weight:750;cursor:pointer;margin-top:4px;
+  }
+  /* 可选字段默认折起来 —— 主路径是「贴链接 → 存」 */
+  .optional{
+    width:100%;border:0;background:none;font-family:inherit;font-size:14px;font-weight:700;
+    color:var(--body);display:flex;align-items:center;gap:6px;padding:11px 0;cursor:pointer;
+  }
+  .optional svg{width:15px;height:15px;color:var(--faint)}
+  .hint{
+    margin-top:14px;padding-top:13px;border-top:1px solid var(--hair-soft);
+    font-size:14px;line-height:1.6;color:var(--muted);
+  }
+  .notes{max-width:760px;margin:30px auto 0;font-size:14px;line-height:1.75;color:#3B3730}
+  .notes h4{font-size:15px;font-weight:800;margin-bottom:8px}
+  .notes li{margin-left:18px;margin-bottom:5px}
+  .notes b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="lede">
+    <h1>种草 · 界面提案 v2</h1>
+    <p>同一套内容、同一个「城市食册」方向，只改三件事：把首屏还给内容、把列表密度提上来、把「数据现在是两个人共享的」这件事画出来。强调色换回规格里原本定的椒红——深一档的 <code>#C33C22</code> 对白字 5.26:1，当前的琥珀是 1.86:1（源码注释里写的 2.15:1 还偏乐观），白字永远用不了。</p>
+  </div>
+
+  <div class="decks">
+
+    <!-- ============ 想去 ============ -->
+    <figure class="deck">
+      <figcaption><b>想去</b><span>首屏 24 条里看得到 6 条</span></figcaption>
+      <div class="phone">
+        <div class="bar">
+          <h2>想去</h2>
+          <span class="n">24</span>
+          <span class="spacer"></span>
+          <span class="sync"><i class="dot"></i>已同步</span>
+          <button class="add" aria-label="保存新线索">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </div>
+
+        <div class="remote">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+          小张刚改了 2 条
+          <button type="button">查看</button>
+        </div>
+
+        <div class="scroll">
+          <div class="pad">
+            <div class="findrow">
+              <div class="search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+                <input type="search" placeholder="搜店名、菜名或商圈" aria-label="搜索" />
+              </div>
+              <button class="filterbtn" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h18M7 12h10M11 18h2"/></svg>
+                筛选<span class="badge">1</span>
+              </button>
+            </div>
+            <div class="tokens">
+              <span class="token">晚餐
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+              </span>
+            </div>
+
+            <div class="srow">
+              <h3>12 条 · 按收藏时间</h3>
+              <button type="button">收藏时间
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>
+
+            <div class="list">
+              <button class="row" type="button">
+                <span class="thumb meat">🍢</span>
+                <span class="rbody">
+                  <span class="rtop"><span class="rname">炭火小酒馆</span></span>
+                  <span class="rmeta">静安寺 · 烧鸟 · 今天收藏</span>
+                  <span class="rtags"><span class="tag">晚餐</span><span class="tag">朋友聚餐</span><span class="more">+2</span></span>
+                </span>
+                <span class="who who-w">王</span>
+                <svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+              </button>
+
+              <button class="row" type="button">
+                <span class="thumb home">🍽️</span>
+                <span class="rbody">
+                  <span class="rtop"><span class="rname">巷子口私房菜</span></span>
+                  <span class="rmeta">徐汇 · 店铺 · 3 天前</span>
+                  <span class="rtags"><span class="tag">家常</span><span class="tag">工作日</span></span>
+                </span>
+                <span class="who who-z">张</span>
+                <svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+              </button>
+
+              <button class="row" type="button">
+                <span class="thumb cof">☕</span>
+                <span class="rbody">
+                  <span class="rtop"><span class="rname">海盐咖啡研究所</span></span>
+                  <span class="rmeta">武康路 · 店铺 · 上周</span>
+                  <span class="rtags"><span class="tag">下午茶</span><span class="tag">一个人吃</span></span>
+                </span>
+                <span class="who who-z">张</span>
+                <svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+              </button>
+
+              <button class="row" type="button">
+                <span class="thumb noo">🍜</span>
+                <span class="rbody">
+                  <span class="rtop"><span class="rname">六月里手打面</span></span>
+                  <span class="rmeta">黄浦 · 店铺 · 上周</span>
+                  <span class="rtags"><span class="tag">午餐</span><span class="tag">工作日</span></span>
+                </span>
+                <span class="who who-w">王</span>
+                <svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+              </button>
+
+              <button class="row" type="button">
+                <span class="thumb sus">🍣</span>
+                <span class="rbody">
+                  <span class="rtop"><span class="rname">山与海居酒屋</span></span>
+                  <span class="rmeta">南京西路 · 店铺 · 2 周前</span>
+                  <span class="rtags"><span class="tag">晚餐</span><span class="tag">朋友聚餐</span><span class="more">+1</span></span>
+                </span>
+                <span class="who who-z">张</span>
+                <svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+              </button>
+
+              <button class="row" type="button">
+                <span class="thumb des">🍰</span>
+                <span class="rbody">
+                  <span class="rtop"><span class="rname">五角场芝士工坊</span></span>
+                  <span class="rmeta">五角场 · 菜品 · 2 周前</span>
+                  <span class="rtags"><span class="tag">甜品</span><span class="tag">下午茶</span></span>
+                </span>
+                <span class="who who-w">王</span>
+                <svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h5l2 3h4l2-3h5"/><path d="M4.5 6h15l1.5 6v6H3v-6z"/></svg><span>收件箱</span></button>
+          <button type="button" class="on"><i class="pip"></i><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 20.5 4.2 13A4.7 4.7 0 1 1 12 7.7 4.7 4.7 0 1 1 19.8 13z"/></svg><span>想去</span></button>
+          <button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>日历</span></button>
+          <button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg><span>已去过</span></button>
+          <button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c1.2-3.6 4-5.2 7-5.2s5.8 1.6 7 5.2"/></svg><span>我的</span></button>
+        </nav>
+      </div>
+    </figure>
+
+    <!-- ============ 收件箱 ============ -->
+    <figure class="deck">
+      <figcaption><b>收件箱</b><span>主路径两个控件就到底</span></figcaption>
+      <div class="phone">
+        <div class="bar">
+          <h2>收件箱</h2>
+          <span class="n">2 条待整理</span>
+          <span class="spacer"></span>
+          <span class="sync saving"><i class="dot"></i>正在保存</span>
+        </div>
+
+        <div class="scroll">
+          <div class="ibox">
+            <div class="field">
+              <label for="u">种草链接</label>
+              <input id="u" placeholder="粘贴分享文案或链接" />
+            </div>
+
+            <div class="field">
+              <label>添加人</label>
+              <div class="seg">
+                <button type="button" class="on">小王</button>
+                <button type="button">小张</button>
+              </div>
+            </div>
+
+            <button class="cta" type="button">保存线索</button>
+
+            <button class="optional" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+              补充店名、备注（可选）
+            </button>
+
+            <p class="hint">解析不完整也能存。平台要登录或没抓到图时，文字先留下，封面之后从相册补。</p>
+
+            <div class="srow">
+              <h3>待整理 2 条</h3>
+              <button type="button">最早优先
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>
+
+            <div class="list">
+              <button class="row" type="button">
+                <span class="thumb noo">🍲</span>
+                <span class="rbody">
+                  <span class="rtop"><span class="rname">蜀地老火锅</span></span>
+                  <span class="rmeta">大众点评 · 已解析 · 昨天</span>
+                  <span class="rtags"><span class="tag">整理为店铺</span></span>
+                </span>
+                <span class="who who-w">王</span>
+                <svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+              </button>
+
+              <button class="row" type="button">
+                <span class="thumb des">🔗</span>
+                <span class="rbody">
+                  <span class="rtop"><span class="rname">待补店名</span></span>
+                  <span class="rmeta">小红书 · 未读到标题 · 昨天</span>
+                  <span class="rtags"><span class="tag">补充名称</span><span class="tag">重新解析</span></span>
+                </span>
+                <span class="who who-z">张</span>
+                <svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <button type="button" class="on"><i class="pip"></i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h5l2 3h4l2-3h5"/><path d="M4.5 6h15l1.5 6v6H3v-6z"/></svg><span>收件箱</span></button>
+          <button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 20.5 4.2 13A4.7 4.7 0 1 1 12 7.7 4.7 4.7 0 1 1 19.8 13z"/></svg><span>想去</span></button>
+          <button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>日历</span></button>
+          <button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg><span>已去过</span></button>
+          <button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c1.2-3.6 4-5.2 7-5.2s5.8 1.6 7 5.2"/></svg><span>我的</span></button>
+        </nav>
+      </div>
+    </figure>
+
+  </div>
+
+  <div class="notes">
+    <h4>这几张图在改什么</h4>
+    <ul>
+      <li><b>首屏</b>　想去页现在是「顶栏 78 + 搜索 52 + 三行 chip 150 + 排序行 44 = 324px 才看到第一条内容」。这里压到 153px（上图多出的 81px 是临时出现的远端提示条和一个已选筛选）。可用视口 660px 里，内容占比从 51% 到 77%。</li>
+      <li><b>密度</b>　行高 138 → 97px，缩略图 130 → 76px。首屏可见条数 2.2 → 5.2，滚起来之后 4.4 → 6.8。24 条的列表总长 3,600px → 2,330px，少滚三分之一。信息一条没少：名字、商圈、类型、时间、标签、添加人全在。</li>
+      <li><b>添加人</b>　从 76px 宽的「小王添加」胶囊缩成 22px 的字圆点。只有两个人，一个字就够认，省下的横向空间还给店名。</li>
+      <li><b>共享状态</b>　顶栏右侧常驻同步点（已同步 / 正在保存 / 离线）；对方改了东西时顶出一条可见的条，而不是现在这样悄悄把 remote state 换进来。</li>
+      <li><b>强调色</b>　椒红只出现在三处：主按钮、筛选计数、未处理提示。底栏选中改成墨色短条，日历 today 改成墨色描边——强调色遍地就不再是强调。</li>
+      <li><b>形状</b>　pill 只留给筛选和搜索；缩略图 12px、卡片与按钮 14px、标签 5px 方角。形状重新开始区分功能。</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

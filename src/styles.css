@@ -9,7 +9,7 @@
   not from the chrome. Earlier passes tried to make the interface
   itself playful (heavy clay shadows, thick rims, tinted background)
   and that is what read as cheap.
-  Amber cannot carry white text (2.15:1), so every amber fill uses
+  Amber cannot carry white text (measured 1.86:1), so every amber fill uses
   --color-on-accent dark text, and amber-as-text uses the darker
   --color-accent-ink. Tailwind utilities (emerald-*, zinc-*, stone-*)
   are remapped from @theme so every screen shifts together.
@@ -29,13 +29,17 @@
   --color-surface: #ffffff;
   --color-surface-sunk: #f4f3f0; /* tag pills, quote blocks */
   --color-ink: #1f1b16;
-  /* Amber cannot carry white text (2.15:1). Fills use dark text; amber-as-text
-     on white uses the darker --color-accent-ink. */
+  /* Amber cannot carry white text (measured 1.86:1). Fills use dark text; amber
+     as text uses --color-accent-ink — on white 5.12:1, on emerald-50 4.73:1. */
   --color-accent: #f2b33d; /* amber fill + icons */
   --color-on-accent: #2a2016; /* text/icon on an amber fill (8:1) */
   --color-accent-ink: #96631f; /* amber-toned TEXT on white (5.1:1) */
   --color-selected: #f2b33d;
   --color-accent-pressed: #d99a28;
+  /* 琥珀描边：hover 与 today 的轮廓。文字一律走 --color-accent-ink，
+     因为 accent-pressed 压在 emerald-50 上只有 2.25:1。 */
+  --color-accent-rim: rgba(242, 179, 61, 0.5);
+  --color-accent-rim-strong: rgba(242, 179, 61, 0.85);
 
   /* --- Elevation: deliberately light. Hairlines and generous spacing
          separate things; shadows only lift the few floating surfaces. */
@@ -209,10 +213,84 @@
   }
 
   /* --- Top bar --------------------------------------------------- */
+  /* 56px 单行：吉祥物 · 标题 · 真实计数 · 同步点 · 新建。
+     旧版 78px 的第二行是装饰副标题，和正文区块标题重复。 */
   .app-bar {
-    @apply sticky top-0 z-20 px-4 pb-3 pt-4;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.82));
+    @apply sticky top-0 z-20 flex items-center gap-2.5 px-4;
+    height: 56px;
+    background: rgba(255, 255, 255, 0.94);
     backdrop-filter: saturate(1.15) blur(14px);
+    border-bottom: 1px solid rgba(29, 27, 25, 0.06);
+  }
+
+  .app-bar-title {
+    @apply shrink-0 text-[21px] leading-none;
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    color: var(--color-ink);
+  }
+
+  .app-bar-count {
+    @apply min-w-0 truncate text-[13px];
+    font-weight: 650;
+    color: var(--color-zinc-500);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* --- 共享状态：数据在两台设备之间同步这件事要看得见 ---------- */
+  .sync-dot {
+    @apply inline-flex shrink-0 items-center gap-1.5 text-xs;
+    font-weight: 650;
+    color: var(--color-zinc-500);
+    white-space: nowrap;
+  }
+
+  .sync-dot i {
+    @apply block shrink-0 rounded-full;
+    width: 7px;
+    height: 7px;
+    background: #2f6b4f;
+  }
+
+  .sync-dot-saving i {
+    background: var(--color-warning, #965b17);
+    animation: zc-pulse 1.1s ease-in-out infinite;
+  }
+
+  .sync-dot-offline i,
+  .sync-dot-error i {
+    background: var(--color-red-500);
+  }
+
+  .sync-dot-demo i {
+    background: var(--color-zinc-400);
+  }
+
+  @keyframes zc-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  /* 对方改了东西：一条要人点掉的条，不是 2.4 秒就消失的 toast */
+  .remote-bar {
+    @apply sticky z-20 flex items-center gap-2 px-4 py-2.5 text-[13px];
+    top: 56px;
+    font-weight: 600;
+    color: var(--color-accent-ink);
+    background: var(--color-emerald-50);
+    border-bottom: 1px solid var(--color-accent-rim);
+  }
+
+  .remote-bar > span {
+    @apply min-w-0 flex-1;
+  }
+
+  .remote-bar button {
+    @apply shrink-0 rounded-lg px-2.5 text-[13px];
+    min-height: 44px;
+    font-weight: 750;
+    color: var(--color-accent-ink);
+    background: rgba(255, 255, 255, 0.7);
   }
 
   .brand-mark {
@@ -223,7 +301,7 @@
   }
 
   .icon-fab {
-    @apply grid h-11 w-11 shrink-0 place-items-center rounded-full;
+    @apply grid h-11 w-11 shrink-0 place-items-center rounded-[13px];
     color: var(--color-on-accent);
     background: var(--color-accent);
     box-shadow: var(--shadow-accent);
@@ -259,13 +337,66 @@
   }
 
   /* --- Filters --------------------------------------------------- */
-  .filter-stack {
-    @apply grid gap-2.5;
-  }
-
   .filter-row,
   .tag-filter-row {
     @apply flex flex-wrap items-center gap-2;
+  }
+
+  .filter-stack {
+    @apply grid gap-2;
+  }
+
+  .find-row {
+    @apply flex items-center gap-2;
+  }
+
+  .find-row .search-field {
+    @apply min-w-0 flex-1;
+  }
+
+  .filter-button {
+    @apply inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[15px];
+    min-height: 44px;
+    font-weight: 700;
+    color: var(--color-zinc-700);
+    background: #fff;
+    border-color: var(--hairline);
+    transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+  }
+
+  .filter-button-active {
+    color: var(--color-accent-ink);
+    border-color: var(--color-accent-rim);
+    background: var(--color-emerald-50);
+  }
+
+  .filter-badge {
+    @apply grid shrink-0 place-items-center rounded-full px-1.5 text-[12px];
+    min-width: 19px;
+    height: 19px;
+    font-weight: 800;
+    color: var(--color-on-accent);
+    background: var(--color-accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 已选中的筛选才占位置；没选就整行不存在 */
+  .token-row {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  .filter-token {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 text-[13px];
+    min-height: 0;
+    height: 30px;
+    font-weight: 700;
+    color: var(--color-accent-ink);
+    background: var(--color-emerald-50);
+    border-color: var(--color-accent-rim);
+  }
+
+  .filter-token svg {
+    opacity: 0.7;
   }
 
   .tag-filter-row .filter-chip,
@@ -304,10 +435,6 @@
     color: rgba(42, 32, 22, 0.55);
   }
 
-  .filter-chip-active .chip-count {
-    color: rgba(255, 255, 255, 0.62);
-  }
-
   .filter-more {
     @apply inline-flex shrink-0 items-center rounded-full border text-sm;
     font-weight: 800;
@@ -316,7 +443,114 @@
     border-color: rgba(242, 179, 61, 0.36);
   }
 
+  /* --- Bottom sheet ---------------------------------------------- */
+  .sheet-scrim {
+    @apply fixed inset-0 z-[60] flex items-end justify-center;
+    background: rgba(29, 27, 25, 0.42);
+    animation: zc-fade 0.18s ease both;
+  }
+
+  .sheet {
+    @apply grid w-full gap-3 rounded-t-[22px] px-4 pb-5 pt-3;
+    max-width: 430px;
+    max-height: 78vh;
+    overflow-y: auto;
+    background: var(--color-surface);
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    animation: zc-sheet 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .sheet:focus {
+    outline: none;
+  }
+
+  .sheet-head {
+    @apply flex items-center gap-3;
+  }
+
+  .sheet-head h2 {
+    @apply flex-1;
+  }
+
+  .sheet-close {
+    @apply grid shrink-0 place-items-center rounded-full;
+    width: 32px;
+    height: 32px;
+    color: var(--color-zinc-500);
+    background: var(--color-surface-sunk);
+  }
+
+  .sheet-body {
+    @apply grid gap-2;
+  }
+
+  .sheet-label {
+    @apply pt-1 text-[13px];
+    font-weight: 750;
+    color: var(--color-zinc-500);
+  }
+
+  .sheet-done {
+    margin-top: 4px;
+  }
+
+  @keyframes zc-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes zc-sheet {
+    from { transform: translateY(14px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
   /* --- Panels ---------------------------------------------------- */
+  .list-head {
+    @apply flex items-center justify-between gap-3 px-1;
+  }
+
+  .list-head-title {
+    @apply text-[13px];
+    font-weight: 750;
+    color: var(--color-zinc-500);
+  }
+
+  .list-head-count {
+    @apply shrink-0 text-[13px];
+    font-weight: 700;
+    color: var(--color-zinc-500);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .optional-fields > summary {
+    @apply flex cursor-pointer list-none items-center gap-1.5 text-[14px];
+    min-height: 44px;
+    font-weight: 700;
+    color: var(--color-zinc-700);
+  }
+
+  .optional-fields > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .optional-fields > summary::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid var(--color-zinc-400);
+    border-bottom: 2px solid var(--color-zinc-400);
+    transform: rotate(-45deg);
+    transition: transform 0.2s ease;
+  }
+
+  .optional-fields[open] > summary::before {
+    transform: rotate(45deg);
+  }
+
+  .place-list {
+    @apply grid;
+  }
+
   .panel {
     @apply grid gap-4 rounded-[20px] border p-5;
     border-color: var(--hairline);
@@ -346,7 +580,7 @@
 
   /* --- Featured place card (candy hero, tinted per category) ----- */
   .feature-card {
-    @apply relative overflow-hidden rounded-[30px];
+    @apply relative overflow-hidden rounded-[18px];
     /* --hero-a/--hero-b: bright cover gradient; --hero-body: deep
        saturated base that keeps white text at >=4.5:1 */
     --hero-a: #ffb27a;
@@ -378,7 +612,9 @@
 
   .feature-cover {
     @apply relative grid place-items-center overflow-hidden;
-    aspect-ratio: 20 / 13;
+    /* 20/13 在 343 宽下是 223px 高，整张卡 310px —— 规格要的是一张
+       重点卡，不是两条半列表项的位置。压到 2/1（171px）。 */
+    aspect-ratio: 2 / 1;
     background: linear-gradient(158deg, var(--hero-a) 0%, var(--hero-b) 100%);
   }
 
@@ -387,7 +623,7 @@
   }
 
   .feature-glyph {
-    font-size: 92px;
+    font-size: 68px;
     line-height: 1;
     filter: drop-shadow(0 12px 18px rgba(90, 40, 20, 0.28));
   }
@@ -417,7 +653,7 @@
   }
 
   .feature-body {
-    @apply flex items-end justify-between gap-4 px-4 pb-4 pt-3.5;
+    @apply flex items-center justify-between gap-3 px-4 pb-3.5 pt-3;
     background: #fff;
   }
 
@@ -437,13 +673,20 @@
   /* --- Compact place card ---------------------------------------- */
   /* Content-first row: no card shell at all. The photo and the type are the
      design; spacing does the separating. */
+  /* 行高 97px（旧 138）：缩略图 130→76，靠分隔线而不是留白分组。
+     一屏从 4.4 条到 6.8 条，24 条的列表总长少三分之一，信息一条没减。 */
   .place-card {
-    @apply grid items-start gap-3.5 rounded-[18px] p-1 text-left;
-    grid-template-columns: 130px minmax(0, 1fr) auto;
+    @apply grid items-center gap-3 rounded-[12px] px-1 py-2.5 text-left;
+    grid-template-columns: 76px minmax(0, 1fr) auto auto;
     border: 0;
+    border-bottom: 1px solid rgba(29, 27, 25, 0.06);
     background: transparent;
     box-shadow: none;
     transition: background 0.16s ease;
+  }
+
+  .place-list > div:last-child .place-card {
+    border-bottom: 0;
   }
 
   @media (hover: hover) {
@@ -457,7 +700,7 @@
   }
 
   .place-thumb {
-    @apply grid h-[130px] w-[130px] shrink-0 place-items-center overflow-hidden rounded-[16px];
+    @apply grid h-[76px] w-[76px] shrink-0 place-items-center overflow-hidden rounded-[12px];
     background: linear-gradient(160deg, #ffe8d6 0%, #ffd0b0 100%);
   }
 
@@ -480,12 +723,27 @@
   }
 
   .place-thumb .glyph {
-    font-size: 60px;
+    font-size: 36px;
     line-height: 1;
   }
 
+  /* 添加人：76px 宽的「小王添加」胶囊换成 22px 字圆点。
+     只有两个固定添加人，一个字就够认，省下的横向空间还给店名。
+     完整说法在 title/aria-label 里，读屏和长按都拿得到。 */
+  .who-dot {
+    @apply grid shrink-0 place-items-center rounded-full text-[12px];
+    width: 22px;
+    height: 22px;
+    font-weight: 800;
+    color: #fff;
+  }
+
+  .who-dot-xiaowang { background: #7a6a57; }
+  .who-dot-xiaozhang { background: #4a6b7a; }
+  .who-dot-unknown { background: var(--color-zinc-400); }
+
   .place-chevron {
-    @apply grid h-8 w-8 shrink-0 place-items-center rounded-full;
+    @apply grid h-6 w-6 shrink-0 place-items-center rounded-full;
     color: #948b7e;
     transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), color 0.16s ease;
   }
@@ -497,7 +755,7 @@
 
   /* --- Sort chip ------------------------------------------------- */
   .sort-chip {
-    @apply inline-flex min-h-10 shrink-0 items-center gap-2 rounded-full border px-3.5 text-sm;
+    @apply inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border px-3.5 text-sm;
     font-weight: 700;
     color: var(--color-zinc-700);
     background: #fff;
@@ -511,8 +769,8 @@
   }
 
   .sort-chip:hover {
-    color: var(--color-accent);
-    border-color: rgba(227, 74, 44, 0.32);
+    color: var(--color-accent-ink);
+    border-color: var(--color-accent-rim);
   }
 
   /* --- Buttons --------------------------------------------------- */
@@ -585,24 +843,6 @@
     text-underline-offset: 3px;
   }
 
-  /* --- Segmented toggle (legacy toggle buttons) ------------------ */
-  .toggle-button {
-    @apply min-h-11 rounded-xl border border-transparent bg-transparent px-3;
-    font-weight: 600;
-    color: #5c574f;
-    transition: color 0.16s ease, background 0.16s ease;
-  }
-
-  .toggle-button:hover {
-    color: var(--color-accent);
-  }
-
-  .toggle-active {
-    @apply min-h-11 rounded-xl px-3 text-white;
-    font-weight: 750;
-    background: var(--color-selected);
-  }
-
   /* --- Chips (form / tag) ---------------------------------------- */
   .chip {
     @apply inline-flex min-h-11 items-center rounded-full border px-3.5 py-2 text-sm;
@@ -614,19 +854,14 @@
   }
 
   .chip:hover {
-    border-color: rgba(227, 74, 44, 0.34);
+    border-color: var(--color-accent-rim);
     background: var(--color-emerald-50);
-    color: var(--color-accent-pressed);
-  }
-
-  .chip-selected {
-    @apply inline-flex min-h-11 items-center rounded-full px-3.5 py-2 text-sm text-white;
-    font-weight: 750;
-    background: var(--color-selected);
+    color: var(--color-accent-ink);
   }
 
   .chip-passive {
-    @apply inline-flex min-h-7 items-center rounded-full px-3 py-1 text-[13px];
+    @apply inline-flex shrink-0 items-center rounded-[6px] px-2 text-[12px];
+    height: 22px;
     font-weight: 600;
     color: #5c574f;
     background: var(--color-surface-sunk);
@@ -634,7 +869,8 @@
   }
 
   .chip-overflow {
-    @apply inline-flex min-h-7 items-center rounded-full px-3 py-1 text-[13px];
+    @apply inline-flex shrink-0 items-center rounded-[6px] px-2 text-[12px];
+    height: 22px;
     font-weight: 700;
     color: var(--color-accent-pressed);
     background: var(--color-emerald-50);
@@ -660,7 +896,7 @@
     @apply text-xs;
     font-weight: 700;
     letter-spacing: 0.04em;
-    color: #8a847a;
+    color: var(--color-zinc-500);
   }
 
   .action-panel {
@@ -676,7 +912,7 @@
   .details-panel summary {
     @apply flex min-h-11 cursor-pointer items-center gap-1.5;
     font-weight: 700;
-    color: var(--color-accent);
+    color: var(--color-ink);
     list-style: none;
   }
 
@@ -716,34 +952,6 @@
 
   .cover img {
     @apply block h-full min-h-32 w-full object-cover;
-  }
-
-  .wish-card .cover {
-    align-self: start;
-    height: 136px !important;
-    min-height: 136px !important;
-  }
-
-  .wish-card .cover img {
-    height: 100%;
-    min-height: 0 !important;
-  }
-
-  .wish-card-actions {
-    @apply border-t;
-    border-color: rgba(29, 27, 25, 0.08);
-  }
-
-  .wish-card .details-panel {
-    @apply pt-0;
-  }
-
-  .wish-card .details-panel summary {
-    @apply flex min-h-9 items-center text-base;
-  }
-
-  .wish-card .action-panel {
-    @apply pt-2;
   }
 
   /* --- Floating bottom nav (shared sliding indicator) ------------ */
@@ -809,7 +1017,7 @@
     @apply inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full px-3 text-white;
     font-weight: 700;
     border: 1px solid rgba(255, 255, 255, 0.24);
-    background: rgba(227, 74, 44, 0.9);
+    background: var(--color-red-500);
     transition: background 0.16s ease;
   }
 
@@ -821,20 +1029,14 @@
   .empty-state {
     @apply grid place-items-center gap-3 rounded-3xl px-4 py-10 text-center text-base;
     font-weight: 600;
-    color: #8a847a;
+    color: var(--color-zinc-500);
     border: 1.5px dashed rgba(29, 27, 25, 0.16);
     background: rgba(252, 251, 249, 0.5);
   }
 
-  .empty-state-icon {
-    @apply grid h-12 w-12 place-items-center rounded-2xl;
-    color: var(--color-accent);
-    background: var(--color-emerald-50);
-  }
-
   .loading-screen {
     @apply grid min-h-screen place-items-center gap-3 text-center;
-    color: #8a847a;
+    color: var(--color-zinc-500);
   }
 
   /* --- Calendar -------------------------------------------------- */
@@ -848,13 +1050,13 @@
   }
 
   .cal-cell:hover {
-    border-color: rgba(227, 74, 44, 0.32);
+    border-color: var(--color-accent-rim);
   }
 
   .cal-cell-today {
-    border-color: rgba(227, 74, 44, 0.5);
+    border-color: var(--color-accent-rim-strong);
     background: var(--color-emerald-50);
-    color: var(--color-accent-pressed);
+    color: var(--color-accent-ink);
   }
 
   .cal-cell-selected {
@@ -992,7 +1194,7 @@
   }
 
   .segmented-option[data-active="true"] {
-    color: #ffffff;
+    color: var(--color-on-accent);
   }
 
   .segmented-option:not([data-active="true"]):hover {
@@ -1007,7 +1209,7 @@
 
   /* --- Calendar month-nav buttons -------------------------------- */
   .cal-nav {
-    @apply grid h-10 w-10 shrink-0 place-items-center rounded-xl border;
+    @apply grid h-11 w-11 shrink-0 place-items-center rounded-xl border;
     color: #5c574f;
     border-color: rgba(29, 27, 25, 0.1);
     background: var(--color-surface);
@@ -1015,9 +1217,9 @@
   }
 
   .cal-nav:hover {
-    border-color: rgba(227, 74, 44, 0.34);
+    border-color: var(--color-accent-rim);
     background: var(--color-emerald-50);
-    color: var(--color-accent-pressed);
+    color: var(--color-accent-ink);
   }
 }
 
